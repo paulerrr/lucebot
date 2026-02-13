@@ -9,10 +9,14 @@ log = logging.getLogger("lucebot")
 API_BASE = "https://cpbjr.github.io/catholic-readings-api/liturgical-calendar"
 
 
-async def get_daily_saint() -> list[discord.Embed] | None:
+FEAST_TYPES = {"memorial", "feast", "solemnity", "optional memorial"}
+
+
+async def get_daily_saint() -> list[discord.Embed] | None | str:
     """Fetch the saint/celebration of the day from the liturgical calendar API.
 
-    Returns a list of embeds (one per celebration) or None if unavailable.
+    Returns a list of embeds for a saint feast, the string ``"no_feast"`` when
+    the day is an ordinary weekday (FERIA), or ``None`` on fetch errors.
     """
     today = datetime.date.today()
     url = f"{API_BASE}/{today.year}/{today.strftime('%m-%d')}.json"
@@ -30,10 +34,13 @@ async def get_daily_saint() -> list[discord.Embed] | None:
 
     celebration = data.get("celebration")
     if not celebration:
-        return None
+        return "no_feast"
+
+    cel_type = celebration.get("type", "")
+    if cel_type.lower() not in FEAST_TYPES:
+        return "no_feast"
 
     name = celebration.get("name", "Unknown Celebration")
-    cel_type = celebration.get("type", "")
     quote = celebration.get("quote", "")
     description = celebration.get("description", "")
     wiki_link = data.get("wikipediaLink", "")

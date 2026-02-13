@@ -61,12 +61,18 @@ async def post_quote(channel):
     await channel.send(embed=embed)
 
 
-async def post_saint(channel):
+async def post_saint(channel, *, manual=False):
     """Fetch the saint of the day and send it to the given channel."""
-    embeds = await get_daily_saint()
-    if embeds is None:
+    result = await get_daily_saint()
+    if result is None:
+        if manual:
+            await channel.send("Could not fetch saint data.")
         return
-    await channel.send(embeds=embeds)
+    if result == "no_feast":
+        if manual:
+            await channel.send("No saint feast today.")
+        return
+    await channel.send(embeds=result)
 
 
 @tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
@@ -125,7 +131,7 @@ async def on_message(message):
 
     if message.content.strip() == "!saint":
         log.info("Manual saint request from %s", message.author)
-        await post_saint(message.channel)
+        await post_saint(message.channel, manual=True)
 
 
 client.run(TOKEN)
