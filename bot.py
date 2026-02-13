@@ -7,18 +7,23 @@ from discord.ext import tasks
 from dotenv import load_dotenv
 
 from readings import get_daily_readings, format_for_discord
+from quotes import get_daily_quote, format_quote_for_discord
 
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
+QUOTE_CHANNEL_ID = os.getenv("DISCORD_QUOTE_CHANNEL_ID")
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN not set in .env")
 if not CHANNEL_ID:
     raise RuntimeError("DISCORD_CHANNEL_ID not set in .env")
+if not QUOTE_CHANNEL_ID:
+    raise RuntimeError("DISCORD_QUOTE_CHANNEL_ID not set in .env")
 
 CHANNEL_ID = int(CHANNEL_ID)
+QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
@@ -44,19 +49,35 @@ async def post_readings(channel):
         await channel.send(embeds=embeds[i : i + 10])
 
 
+async def post_quote(channel):
+    """Fetch a random saint quote and send it to the given channel."""
+    quote = get_daily_quote()
+    embed = format_quote_for_discord(quote)
+    await channel.send(embed=embed)
+
+
 @tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
 async def daily_readings():
-    """Post readings every day at 7:00 AM EST."""
+    """Post readings and quote every day at 7:00 AM EST."""
     channel = client.get_channel(CHANNEL_ID)
     if channel is None:
         log.error("Channel %s not found", CHANNEL_ID)
-        return
+    else:
+        log.info("Posting daily readings")
+        try:
+            await post_readings(channel)
+        except Exception:
+            log.exception("Failed to post daily readings")
 
-    log.info("Posting daily readings")
-    try:
-        await post_readings(channel)
-    except Exception:
-        log.exception("Failed to post daily readings")
+    quote_channel = client.get_channel(QUOTE_CHANNEL_ID)
+    if quote_channel is None:
+        log.error("Quote channel %s not found", QUOTE_CHANNEL_ID)
+    else:
+        log.info("Posting daily quote")
+        try:
+            await post_quote(quote_channel)
+        except Exception:
+            log.exception("Failed to post daily quote")
 
 
 @client.event
@@ -74,6 +95,10 @@ async def on_message(message):
     if message.content.strip() == "!readings":
         log.info("Manual readings request from %s", message.author)
         await post_readings(message.channel)
+
+    if message.content.strip() == "!quote":
+        log.info("Manual quote request from %s", message.author)
+        await post_quote(message.channel)
 
 
 client.run(TOKEN)

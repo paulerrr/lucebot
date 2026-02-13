@@ -8,6 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py readings.py ./
+RUN git clone --depth 1 https://github.com/paulerrr/saint-quotes.git /tmp/saint-quotes && \
+    cp /tmp/saint-quotes/saint_quotes.py /tmp/saint-quotes/saint_quotes.db ./ && \
+    rm -rf /tmp/saint-quotes
+
+COPY bot.py readings.py quotes.py ./
 
 CMD ["python", "bot.py"]

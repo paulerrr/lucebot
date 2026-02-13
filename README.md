@@ -1,11 +1,13 @@
 # Lucebot
 
-Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readings from the USCCB website.
+Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readings and saint quotes.
 
 ## Features
 
-- Automatically posts readings every day at 7:00 AM EST
-- `!readings` command for on-demand fetching
+- Automatically posts Mass readings every day at 7:00 AM EST
+- Daily saint quote (random from 1,866 quotes by 224 Catholic saints)
+- `!readings` command for on-demand readings
+- `!quote` command for on-demand saint quotes
 
 ## Setup
 
@@ -14,6 +16,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    ```
    DISCORD_TOKEN=your-bot-token-here
    DISCORD_CHANNEL_ID=your-channel-id-here
+   DISCORD_QUOTE_CHANNEL_ID=your-quote-channel-id-here
    ```
 
 2. Run the bot with Docker Compose:
@@ -30,7 +33,15 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    pip install -r requirements.txt
    ```
 
-2. Run the bot:
+2. Clone the [saint-quotes](https://github.com/paulerrr/saint-quotes) library into the project directory:
+
+   ```bash
+   git clone --depth 1 https://github.com/paulerrr/saint-quotes.git /tmp/saint-quotes
+   cp /tmp/saint-quotes/saint_quotes.py /tmp/saint-quotes/saint_quotes.db ./
+   rm -rf /tmp/saint-quotes
+   ```
+
+3. Run the bot:
 
    ```bash
    python bot.py
