@@ -1,0 +1,79 @@
+import datetime
+import logging
+import os
+
+import discord
+from discord.ext import tasks
+from dotenv import load_dotenv
+
+from readings import get_daily_readings, format_for_discord
+
+load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
+
+if not TOKEN:
+    raise RuntimeError("DISCORD_TOKEN not set in .env")
+if not CHANNEL_ID:
+    raise RuntimeError("DISCORD_CHANNEL_ID not set in .env")
+
+CHANNEL_ID = int(CHANNEL_ID)
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("lucebot")
+
+EST = datetime.timezone(datetime.timedelta(hours=-5))
+
+intents = discord.Intents.default()
+intents.message_content = True
+client = discord.Client(intents=intents)
+
+
+async def post_readings(channel):
+    """Fetch readings and send them to the given channel."""
+    mass = await get_daily_readings()
+    if mass is None:
+        await channel.send("Could not fetch today's readings.")
+        return
+
+    embeds = format_for_discord(mass)
+
+    # Discord allows max 10 embeds per message; batch if needed
+    for i in range(0, len(embeds), 10):
+        await channel.send(embeds=embeds[i : i + 10])
+
+
+@tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
+async def daily_readings():
+    """Post readings every day at 7:00 AM EST."""
+    channel = client.get_channel(CHANNEL_ID)
+    if channel is None:
+        log.error("Channel %s not found", CHANNEL_ID)
+        return
+
+    log.info("Posting daily readings")
+    try:
+        await post_readings(channel)
+    except Exception:
+        log.exception("Failed to post daily readings")
+
+
+@client.event
+async def on_ready():
+    log.info("Logged in as %s", client.user)
+    if not daily_readings.is_running():
+        daily_readings.start()
+
+
+@client.event
+async def on_message(message):
+    if message.author == client.user:
+        return
+
+    if message.content.strip() == "!readings":
+        log.info("Manual readings request from %s", message.author)
+        await post_readings(message.channel)
+
+
+client.run(TOKEN)
