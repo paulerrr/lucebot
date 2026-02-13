@@ -9,20 +9,28 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 
 ## Setup
 
-1. Install dependencies:
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Copy `.env.example` to `.env` and fill in your values:
+1. Copy `.env.example` to `.env` and fill in your values:
 
    ```
    DISCORD_TOKEN=your-bot-token-here
    DISCORD_CHANNEL_ID=your-channel-id-here
    ```
 
-3. Run the bot:
+2. Run the bot with Docker Compose:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+### Running without Docker
+
+1. Install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Run the bot:
 
    ```bash
    python bot.py
