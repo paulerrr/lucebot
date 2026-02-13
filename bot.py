@@ -8,12 +8,14 @@ from dotenv import load_dotenv
 
 from readings import get_daily_readings, format_for_discord
 from quotes import get_daily_quote, format_quote_for_discord
+from saints import get_daily_saint
 
 load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 QUOTE_CHANNEL_ID = os.getenv("DISCORD_QUOTE_CHANNEL_ID")
+SAINT_CHANNEL_ID = os.getenv("DISCORD_SAINT_CHANNEL_ID")
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN not set in .env")
@@ -21,9 +23,12 @@ if not CHANNEL_ID:
     raise RuntimeError("DISCORD_CHANNEL_ID not set in .env")
 if not QUOTE_CHANNEL_ID:
     raise RuntimeError("DISCORD_QUOTE_CHANNEL_ID not set in .env")
+if not SAINT_CHANNEL_ID:
+    raise RuntimeError("DISCORD_SAINT_CHANNEL_ID not set in .env")
 
 CHANNEL_ID = int(CHANNEL_ID)
 QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID)
+SAINT_CHANNEL_ID = int(SAINT_CHANNEL_ID)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
@@ -56,6 +61,14 @@ async def post_quote(channel):
     await channel.send(embed=embed)
 
 
+async def post_saint(channel):
+    """Fetch the saint of the day and send it to the given channel."""
+    embeds = await get_daily_saint()
+    if embeds is None:
+        return
+    await channel.send(embeds=embeds)
+
+
 @tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
 async def daily_readings():
     """Post readings and quote every day at 7:00 AM EST."""
@@ -79,6 +92,16 @@ async def daily_readings():
         except Exception:
             log.exception("Failed to post daily quote")
 
+    saint_channel = client.get_channel(SAINT_CHANNEL_ID)
+    if saint_channel is None:
+        log.error("Saint channel %s not found", SAINT_CHANNEL_ID)
+    else:
+        log.info("Posting daily saint")
+        try:
+            await post_saint(saint_channel)
+        except Exception:
+            log.exception("Failed to post daily saint")
+
 
 @client.event
 async def on_ready():
@@ -99,6 +122,10 @@ async def on_message(message):
     if message.content.strip() == "!quote":
         log.info("Manual quote request from %s", message.author)
         await post_quote(message.channel)
+
+    if message.content.strip() == "!saint":
+        log.info("Manual saint request from %s", message.author)
+        await post_saint(message.channel)
 
 
 client.run(TOKEN)
