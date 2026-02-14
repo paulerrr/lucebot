@@ -12,6 +12,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - `!latin` command for on-demand Traditional Latin Mass readings
 - `!quote` command for on-demand saint quotes
 - `!saint` command for on-demand saint/feast of the day
+- Bible verse lookup — type a reference like `John 3:16` or `Gen 1:1-3` and the bot replies with the verse(s) from the Knox Bible translation
 
 ## Setup
 
