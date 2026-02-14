@@ -7,6 +7,7 @@ from discord.ext import tasks
 from dotenv import load_dotenv
 
 from readings import get_daily_readings, format_for_discord
+from latin_readings import get_latin_readings, format_latin_for_discord
 from quotes import get_daily_quote, format_quote_for_discord
 from saints import get_daily_saint
 
@@ -16,6 +17,7 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 QUOTE_CHANNEL_ID = os.getenv("DISCORD_QUOTE_CHANNEL_ID")
 SAINT_CHANNEL_ID = os.getenv("DISCORD_SAINT_CHANNEL_ID")
+READINGS_TYPE = os.getenv("READINGS_TYPE", "novus_ordo").lower()
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN not set in .env")
@@ -54,6 +56,19 @@ async def post_readings(channel):
         await channel.send(embeds=embeds[i : i + 10])
 
 
+async def post_latin_readings(channel):
+    """Fetch TLM propers and send them to the given channel."""
+    data = await get_latin_readings()
+    if data is None:
+        await channel.send("Could not fetch today's Traditional Latin Mass readings.")
+        return
+
+    embeds = format_latin_for_discord(data)
+
+    for i in range(0, len(embeds), 10):
+        await channel.send(embeds=embeds[i : i + 10])
+
+
 async def post_quote(channel):
     """Fetch a random saint quote and send it to the given channel."""
     quote = get_daily_quote()
@@ -82,9 +97,12 @@ async def daily_readings():
     if channel is None:
         log.error("Channel %s not found", CHANNEL_ID)
     else:
-        log.info("Posting daily readings")
+        log.info("Posting daily readings (type=%s)", READINGS_TYPE)
         try:
-            await post_readings(channel)
+            if READINGS_TYPE == "latin":
+                await post_latin_readings(channel)
+            else:
+                await post_readings(channel)
         except Exception:
             log.exception("Failed to post daily readings")
 
@@ -128,6 +146,10 @@ async def on_message(message):
     if message.content.strip() == "!quote":
         log.info("Manual quote request from %s", message.author)
         await post_quote(message.channel)
+
+    if message.content.strip() == "!latin":
+        log.info("Manual TLM readings request from %s", message.author)
+        await post_latin_readings(message.channel)
 
     if message.content.strip() == "!saint":
         log.info("Manual saint request from %s", message.author)

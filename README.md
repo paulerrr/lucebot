@@ -5,9 +5,11 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 ## Features
 
 - Automatically posts Mass readings every day at 7:00 AM EST
+- Supports Novus Ordo (USCCB) or 1962 Traditional Latin Mass (TLM) readings via `READINGS_TYPE` env var
 - Daily saint quote (random from 1,866 quotes by 224 Catholic saints)
 - Saint/feast of the day from the liturgical calendar (skips ordinary weekdays)
 - `!readings` command for on-demand readings
+- `!latin` command for on-demand Traditional Latin Mass readings
 - `!quote` command for on-demand saint quotes
 - `!saint` command for on-demand saint/feast of the day
 
@@ -20,6 +22,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    DISCORD_CHANNEL_ID=your-channel-id-here
    DISCORD_QUOTE_CHANNEL_ID=your-quote-channel-id-here
    DISCORD_SAINT_CHANNEL_ID=your-saint-channel-id-here
+   READINGS_TYPE=novus_ordo  # or "latin" for Traditional Latin Mass
    ```
 
 2. Run the bot with Docker Compose:
