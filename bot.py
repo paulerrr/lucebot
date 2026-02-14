@@ -10,7 +10,7 @@ from readings import get_daily_readings, format_for_discord
 from latin_readings import get_latin_readings, format_latin_for_discord
 from quotes import get_daily_quote, format_quote_for_discord
 from saints import get_daily_saint
-from bible import parse_verse_reference, lookup_verses, format_bible_embed
+from bible import parse_verse_reference, lookup_verses, format_bible_view
 
 load_dotenv()
 
@@ -163,8 +163,8 @@ async def on_message(message):
             book_id, chapter, verse_start, verse_end = parsed
             verses = lookup_verses(book_id, chapter, verse_start, verse_end)
             if verses:
-                embed = format_bible_embed(book_id, chapter, verse_start, verse_end, verses)
-                await message.channel.send(embed=embed)
+                view = format_bible_view(book_id, chapter, verse_start, verse_end, verses)
+                await message.channel.send(view=view)
 
 
 client.run(TOKEN)

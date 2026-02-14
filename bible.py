@@ -3,6 +3,7 @@ import os
 import re
 
 import discord
+from discord.ui import LayoutView, Container, TextDisplay
 
 # Path to the Knox Bible NDJSON file (one JSON object per line)
 BIBLE_PATH = os.path.join(os.path.dirname(__file__), "knox.json")
@@ -190,8 +191,8 @@ def lookup_verses(book_id, chapter, verse_start=None, verse_end=None):
     return verses if verses else None
 
 
-def format_bible_embed(book_id, chapter, verse_start, verse_end, verses):
-    """Format looked-up verses as a Discord embed."""
+def format_bible_view(book_id, chapter, verse_start, verse_end, verses):
+    """Format looked-up verses as a Components V2 LayoutView."""
     display_name = BOOK_DISPLAY.get(book_id, book_id)
 
     if verse_start is None:
@@ -203,14 +204,14 @@ def format_bible_embed(book_id, chapter, verse_start, verse_end, verses):
 
     body = "\n".join(f"**{v}.** {text}" for v, text in verses)
 
-    # Truncate if over Discord's 4096-char embed limit
-    if len(body) > 4096:
-        body = body[:4093] + "..."
+    # TextDisplay content limit is 4000 chars
+    if len(body) > 4000:
+        body = body[:3997] + "..."
 
-    embed = discord.Embed(
-        title=title,
-        description=body,
-        color=0x3E621B,  # dark green
-    )
-    embed.set_footer(text="Knox Bible Translation")
-    return embed
+    view = LayoutView()
+    container = Container(accent_colour=0x3E621B)  # dark green
+    container.add_item(TextDisplay(f"## {title}"))
+    container.add_item(TextDisplay(body))
+    container.add_item(TextDisplay("-# Knox Bible Translation"))
+    view.add_item(container)
+    return view
