@@ -210,8 +210,8 @@ def format_bible_view(book_id, chapter, verse_start, verse_end, verses):
 
     view = LayoutView()
     container = Container(accent_colour=0x3E621B)  # dark green
-    container.add_item(TextDisplay(f"## {title}"))
+    container.add_item(TextDisplay(f"### {title} - Knox Bible Translation"))
     container.add_item(TextDisplay(body))
-    container.add_item(TextDisplay("-# Knox Bible Translation"))
+    container.add_item(TextDisplay("-# CatholicBible.online, Baronius Press"))
     view.add_item(container)
     return view
