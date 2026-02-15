@@ -10,7 +10,10 @@ from readings import get_daily_readings, format_for_discord
 from latin_readings import get_latin_readings, format_latin_for_discord
 from quotes import get_daily_quote, format_quote_for_discord
 from saints import get_daily_saint
-from bible import parse_verse_reference, lookup_verses, format_bible_view
+from bible import (
+    parse_verse_reference, lookup_verses, format_bible_view,
+    search_verses, format_bible_search_view,
+)
 
 load_dotenv()
 
@@ -24,14 +27,9 @@ if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN not set in .env")
 if not CHANNEL_ID:
     raise RuntimeError("DISCORD_CHANNEL_ID not set in .env")
-if not QUOTE_CHANNEL_ID:
-    raise RuntimeError("DISCORD_QUOTE_CHANNEL_ID not set in .env")
-if not SAINT_CHANNEL_ID:
-    raise RuntimeError("DISCORD_SAINT_CHANNEL_ID not set in .env")
-
 CHANNEL_ID = int(CHANNEL_ID)
-QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID)
-SAINT_CHANNEL_ID = int(SAINT_CHANNEL_ID)
+QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID) if QUOTE_CHANNEL_ID else None
+SAINT_CHANNEL_ID = int(SAINT_CHANNEL_ID) if SAINT_CHANNEL_ID else None
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
@@ -41,6 +39,7 @@ EST = datetime.timezone(datetime.timedelta(hours=-5))
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+tree = discord.app_commands.CommandTree(client)
 
 
 async def post_readings(channel):
@@ -107,30 +106,43 @@ async def daily_readings():
         except Exception:
             log.exception("Failed to post daily readings")
 
-    quote_channel = client.get_channel(QUOTE_CHANNEL_ID)
-    if quote_channel is None:
-        log.error("Quote channel %s not found", QUOTE_CHANNEL_ID)
-    else:
-        log.info("Posting daily quote")
-        try:
-            await post_quote(quote_channel)
-        except Exception:
-            log.exception("Failed to post daily quote")
+    if QUOTE_CHANNEL_ID:
+        quote_channel = client.get_channel(QUOTE_CHANNEL_ID)
+        if quote_channel is None:
+            log.error("Quote channel %s not found", QUOTE_CHANNEL_ID)
+        else:
+            log.info("Posting daily quote")
+            try:
+                await post_quote(quote_channel)
+            except Exception:
+                log.exception("Failed to post daily quote")
 
-    saint_channel = client.get_channel(SAINT_CHANNEL_ID)
-    if saint_channel is None:
-        log.error("Saint channel %s not found", SAINT_CHANNEL_ID)
-    else:
-        log.info("Posting daily saint")
-        try:
-            await post_saint(saint_channel)
-        except Exception:
-            log.exception("Failed to post daily saint")
+    if SAINT_CHANNEL_ID:
+        saint_channel = client.get_channel(SAINT_CHANNEL_ID)
+        if saint_channel is None:
+            log.error("Saint channel %s not found", SAINT_CHANNEL_ID)
+        else:
+            log.info("Posting daily saint")
+            try:
+                await post_saint(saint_channel)
+            except Exception:
+                log.exception("Failed to post daily saint")
+
+
+@tree.command(name="search", description="Search the Knox Bible for a word or phrase")
+@discord.app_commands.describe(query="The word or phrase to search for")
+async def search_command(interaction: discord.Interaction, query: str):
+    log.info("Bible search from %s: %s", interaction.user, query)
+    results = search_verses(query)
+    view = format_bible_search_view(query, results)
+    await interaction.response.send_message(view=view)
 
 
 @client.event
 async def on_ready():
     log.info("Logged in as %s", client.user)
+    await tree.sync()
+    log.info("Slash commands synced")
     if not daily_readings.is_running():
         daily_readings.start()
 

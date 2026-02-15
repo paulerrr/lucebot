@@ -215,3 +215,46 @@ def format_bible_view(book_id, chapter, verse_start, verse_end, verses):
     container.add_item(TextDisplay("-# CatholicBible.online, Baronius Press"))
     view.add_item(container)
     return view
+
+
+def search_verses(query, limit=5):
+    """Search the Bible for verses containing the query string (case-insensitive).
+
+    Returns a list of (book_id, chapter, verse, text) tuples, up to `limit` results.
+    """
+    query_lower = query.lower()
+    results = []
+    for book_id, chapters in BIBLE.items():
+        for chapter, verses in chapters.items():
+            for verse, text in verses.items():
+                if query_lower in text.lower():
+                    results.append((book_id, chapter, verse, text))
+                    if len(results) >= limit:
+                        return results
+    return results
+
+
+def format_bible_search_view(query, results):
+    """Format search results as a Components V2 LayoutView."""
+    view = LayoutView()
+    container = Container(accent_colour=0x3E621B)  # dark green
+    container.add_item(TextDisplay(f'### Bible Search: "{query}"'))
+
+    if not results:
+        container.add_item(TextDisplay("No matching verses found."))
+    else:
+        lines = []
+        for book_id, chapter, verse, text in results:
+            display_name = BOOK_DISPLAY.get(book_id, book_id)
+            ref = f"{display_name} {chapter}:{verse}"
+            # Truncate long verse text
+            display_text = text if len(text) <= 200 else text[:197] + "..."
+            lines.append(f"**{ref}** — {display_text}")
+        body = "\n\n".join(lines)
+        if len(body) > 4000:
+            body = body[:3997] + "..."
+        container.add_item(TextDisplay(body))
+
+    container.add_item(TextDisplay("-# Knox Bible Translation"))
+    view.add_item(container)
+    return view
