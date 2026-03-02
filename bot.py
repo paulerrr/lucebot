@@ -14,8 +14,10 @@ from bible import (
     parse_verse_reference, lookup_verses, format_bible_view,
     search_verses, format_bible_search_view,
 )
+import config as cfg
 
 load_dotenv()
+cfg.load()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
@@ -30,6 +32,10 @@ if not CHANNEL_ID:
 CHANNEL_ID = int(CHANNEL_ID)
 QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID) if QUOTE_CHANNEL_ID else None
 SAINT_CHANNEL_ID = int(SAINT_CHANNEL_ID) if SAINT_CHANNEL_ID else None
+_purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
+_purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
+PURGATORY_CHANNEL_ID = int(_purgatory_channel_env) if _purgatory_channel_env else None
+PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
@@ -38,6 +44,7 @@ EST = datetime.timezone(datetime.timedelta(hours=-5))
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 
@@ -138,6 +145,83 @@ async def search_command(interaction: discord.Interaction, query: str):
     await interaction.response.send_message(view=view)
 
 
+@tree.command(name="purgatory-setup", description="Set up the purgatory verification system")
+@discord.app_commands.describe(
+    channel="Existing purgatory channel (creates #purgatory if not specified)",
+    role="Existing purgatory role (creates Purgatory role if not specified)",
+)
+@discord.app_commands.default_permissions(manage_guild=True)
+async def purgatory_setup_command(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel = None,
+    role: discord.Role = None,
+):
+    await interaction.response.defer(ephemeral=True)
+    guild = interaction.guild
+
+    # Resolve or create role
+    if role is None:
+        role = discord.utils.get(guild.roles, name="Purgatory")
+        if role is None:
+            role = await guild.create_role(
+                name="Purgatory",
+                color=discord.Color.dark_grey(),
+                reason="Purgatory verification setup",
+            )
+            role_status = f"Created new role {role.mention}"
+        else:
+            role_status = f"Found existing role {role.mention}"
+    else:
+        role_status = f"Using role {role.mention}"
+
+    # Resolve or create channel
+    if channel is None:
+        channel = discord.utils.get(guild.text_channels, name="purgatory")
+        if channel is None:
+            channel = await guild.create_text_channel(
+                name="purgatory",
+                reason="Purgatory verification setup",
+            )
+            channel_status = f"Created new channel {channel.mention}"
+        else:
+            channel_status = f"Found existing channel {channel.mention}"
+    else:
+        channel_status = f"Using channel {channel.mention}"
+
+    # Allow purgatory role in the purgatory channel
+    await channel.set_permissions(
+        role, view_channel=True, send_messages=True, read_message_history=True
+    )
+
+    # Deny purgatory role access to all other channels
+    denied = 0
+    for ch in guild.channels:
+        if ch.id == channel.id or isinstance(ch, discord.CategoryChannel):
+            continue
+        try:
+            await ch.set_permissions(role, view_channel=False)
+            denied += 1
+        except discord.Forbidden:
+            log.warning("Could not set permissions on channel %s", ch)
+
+    # Save to persistent config
+    cfg.set("purgatory_channel_id", channel.id)
+    cfg.set("purgatory_role_id", role.id)
+
+    await interaction.followup.send(
+        f"Purgatory setup complete!\n"
+        f"- {role_status}\n"
+        f"- {channel_status}\n"
+        f"- Denied access to {denied} other channel(s)\n\n"
+        f"New members will be assigned {role.mention} and directed to {channel.mention} for verification.",
+        ephemeral=True,
+    )
+    log.info(
+        "Purgatory setup by %s: role=%s channel=%s denied=%d",
+        interaction.user, role.id, channel.id, denied,
+    )
+
+
 @client.event
 async def on_ready():
     log.info("Logged in as %s", client.user)
@@ -145,6 +229,41 @@ async def on_ready():
     log.info("Slash commands synced")
     if not daily_readings.is_running():
         daily_readings.start()
+
+
+@client.event
+async def on_member_join(member):
+    purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
+    purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+    if not purgatory_channel_id or not purgatory_role_id:
+        return
+
+    guild = member.guild
+    role = guild.get_role(purgatory_role_id)
+    if role is None:
+        log.error("Purgatory role %s not found in guild", purgatory_role_id)
+        return
+
+    try:
+        await member.add_roles(role, reason="New member — awaiting verification")
+    except discord.Forbidden:
+        log.error("Missing permissions to assign purgatory role to %s", member)
+        return
+
+    channel = client.get_channel(purgatory_channel_id)
+    if channel is None:
+        log.error("Purgatory channel %s not found", purgatory_channel_id)
+        return
+
+    await channel.send(
+        f"Welcome, {member.mention}! Before you can access the server, please answer "
+        f"the following questions here:\n\n"
+        f"1. Are you Catholic?\n"
+        f"2. Are you 18 years old or older?\n"
+        f"3. Who is the current pope?\n\n"
+        f"Once you've answered, please ping a mod so they can verify you and grant you access."
+    )
+    log.info("Assigned purgatory role and posted verification prompt for %s", member)
 
 
 @client.event
