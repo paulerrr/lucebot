@@ -58,9 +58,8 @@ async def post_readings(channel):
 
     embeds = format_for_discord(mass)
 
-    # Discord allows max 10 embeds per message; batch if needed
-    for i in range(0, len(embeds), 10):
-        await channel.send(embeds=embeds[i : i + 10])
+    for embed in embeds:
+        await channel.send(embed=embed)
 
 
 async def post_latin_readings(channel):
@@ -72,8 +71,8 @@ async def post_latin_readings(channel):
 
     embeds = format_latin_for_discord(data)
 
-    for i in range(0, len(embeds), 10):
-        await channel.send(embeds=embeds[i : i + 10])
+    for embed in embeds:
+        await channel.send(embed=embed)
 
 
 async def post_quote(channel):
