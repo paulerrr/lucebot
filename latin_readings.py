@@ -22,6 +22,12 @@ INCLUDE_SECTIONS = {
     "Secreta",
     "Communio",
     "Postcommunio",
+    # Good Friday
+    "Lectiones",
+    "Passio",
+    "Oratio Fidelium",
+    "Crucis Adoratione",
+    "CommunioQ",
 }
 
 COLOR_MAP = {
