@@ -26,7 +26,6 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    DISCORD_QUOTE_CHANNEL_ID=your-quote-channel-id-here
    DISCORD_SAINT_CHANNEL_ID=your-saint-channel-id-here
    READINGS_TYPE=novus_ordo  # or "latin" for Traditional Latin Mass
-   OPENROUTER_API_KEY=your-openrouter-key-here  # optional, enables AI saint summaries
    ```
 
    `DISCORD_QUOTE_CHANNEL_ID`, `DISCORD_SAINT_CHANNEL_ID`, and the purgatory variables are all optional.
