@@ -28,6 +28,10 @@ DATE_RE = re.compile(r'^\s*\([^\)]{3,40}\)\s*\n?')
 # Cross-reference-only entries
 CROSS_REF_RE = re.compile(r'^\s*(Otherwise|See SS\.|See Bl\.)', re.IGNORECASE)
 
+# Inline entry header that bleeds into a description — truncate here.
+# Matches things like "VINCENT (St.) M." appearing mid-description.
+INLINE_HEADER_RE = re.compile(r'\s+[A-Z][A-Za-z ,\'\-]{3,}\s*\((St\.|Bl\.|SS\.)\)')
+
 
 def normalize_name(name: str) -> str:
     """Lowercase, collapse whitespace, strip leading titles."""
@@ -69,6 +73,11 @@ def parse_pdf(pdf_path: str) -> dict:
         chunk = re.sub(r'-\n', '', chunk)
         chunk = re.sub(r'\n+', ' ', chunk)
         chunk = re.sub(r'\s{2,}', ' ', chunk).strip()
+
+        # Truncate at any inline entry header that bled in from the next entry
+        m = INLINE_HEADER_RE.search(chunk)
+        if m:
+            chunk = chunk[:m.start()].strip()
 
         if len(chunk) < 40:
             continue
