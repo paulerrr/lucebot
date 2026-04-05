@@ -3,6 +3,8 @@ import logging
 import aiohttp
 import discord
 
+import book_of_saints
+
 log = logging.getLogger("lucebot")
 
 API_URL = "https://the-collection-of-catholic-prayers-api.vercel.app/v1/today_saint"
@@ -33,6 +35,12 @@ async def get_daily_saint() -> list[discord.Embed] | None | str:
     saint_date = saint.get("saint_date", "")
 
     embed = discord.Embed(title=name, color=discord.Color.gold())
+
+    bio = book_of_saints.lookup(name)
+    if bio:
+        # Discord embed descriptions cap at 4096 chars
+        embed.description = bio[:4096]
+
     if saint_date:
         embed.set_footer(text=saint_date)
 

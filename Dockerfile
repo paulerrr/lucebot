@@ -16,6 +16,6 @@ RUN git clone --depth 1 https://github.com/paulerrr/saint-info-sources.git /tmp/
     cp /tmp/saint-info-sources/saints.db ./ && \
     rm -rf /tmp/saint-info-sources
 
-COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py knox.json config.py ./
+COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py knox.json config.py book_of_saints.py saints_book.json ./
 
 CMD ["python", "bot.py"]
