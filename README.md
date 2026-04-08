@@ -15,6 +15,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - Bible verse lookup — type a reference like `John 3:16` or `Gen 1:1-3` and the bot replies with the verse(s) from the Knox Bible translation
 - `/search` slash command to search the Knox Bible by keyword or phrase
 - Purgatory verification system — new members are held in a restricted channel until a mod verifies them
+- `!verify @member` command (and `/verify` slash command) to remove the Purgatory role and grant server access
 
 ## Setup
 
@@ -66,7 +67,7 @@ When a new member joins, the bot automatically assigns them the **Purgatory** ro
 2. Are you 18 years old or older?
 3. Who is the current pope?
 
-Once answered, they ping a mod for manual review and role removal.
+Once answered, they ping a mod for manual review and role removal using `!verify @member` or `/verify @member`.
 
 ### Setting up purgatory
 

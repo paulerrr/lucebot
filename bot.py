@@ -221,6 +221,34 @@ async def purgatory_setup_command(
     )
 
 
+@tree.command(name="verify", description="Remove the Purgatory role from a member to grant server access")
+@discord.app_commands.describe(member="The member to verify")
+@discord.app_commands.default_permissions(manage_roles=True)
+async def verify_command(interaction: discord.Interaction, member: discord.Member):
+    purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+    if not purgatory_role_id:
+        await interaction.response.send_message("Purgatory role not configured. Run /purgatory-setup first.", ephemeral=True)
+        return
+
+    role = interaction.guild.get_role(purgatory_role_id)
+    if role is None:
+        await interaction.response.send_message("Purgatory role not found in this server.", ephemeral=True)
+        return
+
+    if role not in member.roles:
+        await interaction.response.send_message(f"{member.mention} does not have the Purgatory role.", ephemeral=True)
+        return
+
+    try:
+        await member.remove_roles(role, reason=f"Verified by {interaction.user}")
+    except discord.Forbidden:
+        await interaction.response.send_message("Missing permissions to remove the Purgatory role.", ephemeral=True)
+        return
+
+    await interaction.response.send_message(f"{member.mention} has been verified and granted access.", ephemeral=True)
+    log.info("Verified %s (Purgatory role removed by %s)", member, interaction.user)
+
+
 @client.event
 async def on_ready():
     log.info("Logged in as %s", client.user)
@@ -287,6 +315,30 @@ async def on_message(message):
     if message.content.strip() == "!saint":
         log.info("Manual saint request from %s", message.author)
         await post_saint(message.channel, manual=True)
+
+    if message.content.startswith("!verify "):
+        if not message.author.guild_permissions.manage_roles:
+            await message.channel.send("You don't have permission to verify members.")
+            return
+        args = message.content.split()
+        if len(args) < 2 or not message.mentions:
+            await message.channel.send("Usage: `!verify @member`")
+            return
+        member = message.mentions[0]
+        purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+        if not purgatory_role_id:
+            await message.channel.send("Purgatory role not configured.")
+            return
+        role = message.guild.get_role(purgatory_role_id)
+        if role is None:
+            await message.channel.send("Purgatory role not found.")
+            return
+        if role not in member.roles:
+            await message.channel.send(f"{member.mention} does not have the Purgatory role.")
+            return
+        await member.remove_roles(role, reason=f"Verified by {message.author}")
+        await message.channel.send(f"{member.mention} has been verified and granted access.")
+        log.info("Verified %s (Purgatory role removed by %s)", member, message.author)
 
     # Bible verse lookup — check if the message contains a verse reference
     if not message.content.startswith("!"):
