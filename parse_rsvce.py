@@ -125,9 +125,15 @@ def dir_to_book_id(dir_name):
 
 def parse_chapter(path):
     verses = {}
+    seen_first_heading = False
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.rstrip()
+            if line.startswith("# ") and not line.startswith("### "):
+                if seen_first_heading:
+                    break  # second translation starts here — stop
+                seen_first_heading = True
+                continue
             m = _VERSE_RE.match(line)
             if m:
                 verses[int(m.group(1))] = m.group(2)
