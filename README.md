@@ -58,9 +58,11 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 
 When a new member joins, the bot automatically assigns them the **Purgatory** role, which restricts them to a single `#purgatory` channel. The bot pings them there with three verification questions:
 
-1. Are you Catholic?
+1. Are you Catholic or enquiring? If not, what denomination or religion?
 2. Are you 18 years old or older?
-3. Who is the current pope?
+3. Do you disagree with any traditional Church teachings?
+4. Are you sedevacantist?
+5. Do you want a rosary or prayer ping?
 
 Once answered, they ping a mod for manual review and role removal using `!verify @member` or `/verify @member`.
 
