@@ -5,9 +5,9 @@ import re
 import discord
 from discord.ui import LayoutView, Container, TextDisplay
 
-KNOX_PATH = os.path.join(os.path.dirname(__file__), "knox.json")
-DR_PATH = os.path.join(os.path.dirname(__file__), "dr.json")
-VUL_PATH = os.path.join(os.path.dirname(__file__), "vul.tsv")
+KNOX_PATH = os.path.join(os.path.dirname(__file__), "bibles", "knox.json")
+DR_PATH = os.path.join(os.path.dirname(__file__), "bibles", "dr.json")
+VUL_PATH = os.path.join(os.path.dirname(__file__), "bibles", "vul.tsv")
 
 TRANSLATIONS = {
     "knox": "Knox Bible",

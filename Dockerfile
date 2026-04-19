@@ -12,6 +12,7 @@ RUN git clone --depth 1 https://github.com/paulerrr/saint-quotes.git /tmp/saint-
     cp /tmp/saint-quotes/saint_quotes.py /tmp/saint-quotes/saint_quotes.db ./ && \
     rm -rf /tmp/saint-quotes
 
-COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py knox.json dr.json vul.tsv config.py book_of_saints.py saints_book.json ./
+COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py config.py book_of_saints.py saints_book.json ./
+COPY bibles/ ./bibles/
 
 CMD ["python", "bot.py"]
