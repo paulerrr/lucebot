@@ -16,7 +16,7 @@ TRANSLATIONS = {
     "dr": "Douay-Rheims",
     "vul": "Clementine Vulgate",
     "rsvce": "RSV Catholic Edition",
-    "nabre": "NABRE",
+    "nabre": "New American Bible Revised Edition",
 }
 DEFAULT_TRANSLATION = "knox"
 
