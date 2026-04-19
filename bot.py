@@ -141,6 +141,7 @@ async def daily_readings():
     discord.app_commands.Choice(name="Knox Bible", value="knox"),
     discord.app_commands.Choice(name="Douay-Rheims", value="dr"),
     discord.app_commands.Choice(name="Clementine Vulgate (Latin)", value="vul"),
+    discord.app_commands.Choice(name="RSV Catholic Edition", value="rsvce"),
 ])
 async def set_translation_command(interaction: discord.Interaction, translation: str):
     cfg.set_user(interaction.user.id, "translation", translation)

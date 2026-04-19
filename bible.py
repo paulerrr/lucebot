@@ -8,11 +8,13 @@ from discord.ui import LayoutView, Container, TextDisplay
 KNOX_PATH = os.path.join(os.path.dirname(__file__), "bibles", "knox.json")
 DR_PATH = os.path.join(os.path.dirname(__file__), "bibles", "dr.json")
 VUL_PATH = os.path.join(os.path.dirname(__file__), "bibles", "vul.tsv")
+RSVCE_PATH = os.path.join(os.path.dirname(__file__), "bibles", "rsvce.json")
 
 TRANSLATIONS = {
     "knox": "Knox Bible",
     "dr": "Douay-Rheims",
     "vul": "Clementine Vulgate",
+    "rsvce": "RSV Catholic Edition",
 }
 DEFAULT_TRANSLATION = "knox"
 
@@ -246,6 +248,19 @@ def _load_vul():
 _BIBLES = {}
 
 
+def _load_rsvce():
+    """Load RSVCE from {book_id: {chapter_int: {verse_int: text}}}."""
+    with open(RSVCE_PATH, encoding="utf-8") as f:
+        raw = json.load(f)
+    bible = {}
+    for bid, chapters in raw.items():
+        for ch_str, verses in chapters.items():
+            ch = int(ch_str)
+            for vs_str, text in verses.items():
+                bible.setdefault(bid, {}).setdefault(ch, {})[int(vs_str)] = text
+    return bible
+
+
 def _get_bible(translation):
     if translation not in _BIBLES:
         if translation == "knox":
@@ -254,6 +269,8 @@ def _get_bible(translation):
             _BIBLES["dr"] = _load_dr()
         elif translation == "vul":
             _BIBLES["vul"] = _load_vul()
+        elif translation == "rsvce":
+            _BIBLES["rsvce"] = _load_rsvce()
     return _BIBLES.get(translation, _BIBLES.get("knox"))
 
 
