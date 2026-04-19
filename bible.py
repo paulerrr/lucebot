@@ -9,12 +9,14 @@ KNOX_PATH = os.path.join(os.path.dirname(__file__), "bibles", "knox.json")
 DR_PATH = os.path.join(os.path.dirname(__file__), "bibles", "dr.json")
 VUL_PATH = os.path.join(os.path.dirname(__file__), "bibles", "vul.tsv")
 RSVCE_PATH = os.path.join(os.path.dirname(__file__), "bibles", "rsvce.json")
+NABRE_PATH = os.path.join(os.path.dirname(__file__), "bibles", "nabre.json")
 
 TRANSLATIONS = {
     "knox": "Knox Bible",
     "dr": "Douay-Rheims",
     "vul": "Clementine Vulgate",
     "rsvce": "RSV Catholic Edition",
+    "nabre": "NABRE",
 }
 DEFAULT_TRANSLATION = "knox"
 
@@ -261,6 +263,48 @@ def _load_rsvce():
     return bible
 
 
+# NABRE uses compact book names (no spaces) and modern Protestant-style naming
+# (e.g. "1Kings" = canonical 1 Kings = 3_Kgs in this system's DR-based IDs).
+_NABRE_BOOK_MAP = {
+    "Genesis": "Gen", "Exodus": "Ex", "Leviticus": "Lev", "Numbers": "Num",
+    "Deuteronomy": "Dt", "Joshua": "Jos", "Judges": "Judg", "Ruth": "Ru",
+    "1Samuel": "1_Kgs", "2Samuel": "2_Kgs", "1Kings": "3_Kgs", "2Kings": "4_Kgs",
+    "1Chronicles": "1_Par", "2Chronicles": "2_Par", "Ezra": "Esd", "Nehemiah": "Neh",
+    "Tobit": "Tob", "Judith": "Jdt", "Esther": "Est",
+    "1Maccabees": "1_Mac", "2Maccabees": "2_Mac",
+    "Job": "Job", "Psalms": "Ps", "Proverbs": "Prov", "Ecclesiastes": "Eccl",
+    "SongofSongs": "Cant", "Wisdom": "Wis", "Sirach": "Eccle",
+    "Isaiah": "Isa", "Jeremiah": "Jer", "Lamentations": "Lam", "Baruch": "Bar",
+    "Ezekiel": "Eze", "Daniel": "Dan", "Hosea": "Os", "Joel": "Jo", "Amos": "Am",
+    "Obadiah": "Abd", "Jonah": "Jon", "Micah": "Mic", "Nahum": "Nah",
+    "Habakkuk": "Hab", "Zephaniah": "Sop", "Haggai": "Agg", "Zechariah": "Zac",
+    "Malachi": "Mal", "Matthew": "Mat", "Mark": "Mk", "Luke": "Lk", "John": "Jn",
+    "Acts": "Act", "Romans": "Rom", "1Corinthians": "1_Cor", "2Corinthians": "2_Cor",
+    "Galatians": "Gal", "Ephesians": "Eph", "Philippians": "Phl", "Colossians": "Col",
+    "1Thessalonians": "1_Th", "2Thessalonians": "2_Th", "1Timothy": "1_Tim",
+    "2Timothy": "2_Tim", "Titus": "Tit", "Philemon": "Phm", "Hebrews": "Heb",
+    "James": "Jas", "1Peter": "1_Pet", "2Peter": "2_Pet",
+    "1John": "1_Jn", "2John": "2_Jn", "3John": "3_Jn", "Jude": "Jud",
+    "Revelation": "Apoc",
+}
+
+
+def _load_nabre():
+    """Load NABRE from [{book, chapters: [{chapter, verses: [{verse, text}]}]}]."""
+    with open(NABRE_PATH, encoding="utf-8") as f:
+        raw = json.load(f)
+    bible = {}
+    for book_obj in raw:
+        bid = _NABRE_BOOK_MAP.get(book_obj["book"])
+        if bid is None:
+            continue
+        for ch_obj in book_obj["chapters"]:
+            ch = ch_obj["chapter"]
+            for vs_obj in ch_obj["verses"]:
+                bible.setdefault(bid, {}).setdefault(ch, {})[vs_obj["verse"]] = vs_obj["text"]
+    return bible
+
+
 def _get_bible(translation):
     if translation not in _BIBLES:
         if translation == "knox":
@@ -271,6 +315,8 @@ def _get_bible(translation):
             _BIBLES["vul"] = _load_vul()
         elif translation == "rsvce":
             _BIBLES["rsvce"] = _load_rsvce()
+        elif translation == "nabre":
+            _BIBLES["nabre"] = _load_nabre()
     return _BIBLES.get(translation, _BIBLES.get("knox"))
 
 
