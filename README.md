@@ -13,9 +13,9 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - `!quote` command for on-demand saint quotes
 - `!saint` command for on-demand saint/feast of the day
 - Bible verse lookup — type a reference like `John 3:16` or `Gen 1:1-3` and the bot replies with the verse(s) in your preferred translation
-- Four translations supported: Knox Bible (default), Douay-Rheims, RSV Catholic Edition, and Clementine Vulgate (Latin)
+- Five translations supported: Knox Bible (default), Douay-Rheims, RSV Catholic Edition, New American Bible Revised Edition (NABRE), and Clementine Vulgate (Latin)
 - `/set-translation` slash command to set your preferred translation
-- Append `[vul]`, `[dr]`, `[rsvce]`, or `[knox]` to any reference to override your preference inline (e.g. `John 3:16 [vul]`)
+- Append `[vul]`, `[dr]`, `[rsvce]`, `[nabre]`, or `[knox]` to any reference to override your preference inline (e.g. `John 3:16 [nabre]`)
 - `/search` slash command to search the Bible by keyword or phrase
 - Purgatory verification system — new members are held in a restricted channel until a mod verifies them
 - `!verify @member` command (and `/verify` slash command) to remove the Purgatory role and grant server access
