@@ -12,7 +12,7 @@ from quotes import get_daily_quote, format_quote_for_discord
 from saints import get_daily_saint
 from bible import (
     parse_verse_reference, lookup_verses, format_bible_view,
-    search_verses, format_bible_search_view,
+    search_verses, format_bible_search_view, TRANSLATIONS, DEFAULT_TRANSLATION,
 )
 import config as cfg
 
@@ -135,12 +135,29 @@ async def daily_readings():
                 log.exception("Failed to post daily saint")
 
 
-@tree.command(name="search", description="Search the Knox Bible for a word or phrase")
+@tree.command(name="set-translation", description="Set your preferred Bible translation")
+@discord.app_commands.describe(translation="The translation to use for your Bible verse lookups")
+@discord.app_commands.choices(translation=[
+    discord.app_commands.Choice(name="Knox Bible", value="knox"),
+    discord.app_commands.Choice(name="Douay-Rheims", value="dr"),
+    discord.app_commands.Choice(name="Clementine Vulgate (Latin)", value="vul"),
+])
+async def set_translation_command(interaction: discord.Interaction, translation: str):
+    cfg.set_user(interaction.user.id, "translation", translation)
+    label = TRANSLATIONS.get(translation, translation)
+    await interaction.response.send_message(
+        f"Your Bible translation has been set to **{label}**.", ephemeral=True
+    )
+    log.info("User %s set translation to %s", interaction.user, translation)
+
+
+@tree.command(name="search", description="Search the Bible for a word or phrase")
 @discord.app_commands.describe(query="The word or phrase to search for")
 async def search_command(interaction: discord.Interaction, query: str):
     log.info("Bible search from %s: %s", interaction.user, query)
-    results = search_verses(query)
-    view = format_bible_search_view(query, results)
+    translation = cfg.get_user(interaction.user.id, "translation", DEFAULT_TRANSLATION)
+    results = search_verses(query, translation=translation)
+    view = format_bible_search_view(query, results, translation=translation)
     await interaction.response.send_message(view=view)
 
 
@@ -344,10 +361,11 @@ async def on_message(message):
     if not message.content.startswith("!"):
         parsed = parse_verse_reference(message.content)
         if parsed:
-            book_id, chapter, verse_start, verse_end = parsed
-            verses = lookup_verses(book_id, chapter, verse_start, verse_end)
+            book_id, chapter, verse_start, verse_end, translation_override = parsed
+            translation = translation_override or cfg.get_user(message.author.id, "translation", DEFAULT_TRANSLATION)
+            verses = lookup_verses(book_id, chapter, verse_start, verse_end, translation=translation)
             if verses:
-                view = format_bible_view(book_id, chapter, verse_start, verse_end, verses)
+                view = format_bible_view(book_id, chapter, verse_start, verse_end, verses, translation=translation)
                 await message.channel.send(view=view)
 
 
