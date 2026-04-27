@@ -24,6 +24,8 @@ CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
 QUOTE_CHANNEL_ID = os.getenv("DISCORD_QUOTE_CHANNEL_ID")
 SAINT_CHANNEL_ID = os.getenv("DISCORD_SAINT_CHANNEL_ID")
 READINGS_TYPE = os.getenv("READINGS_TYPE", "novus_ordo").lower()
+_guild_id_env = os.getenv("DISCORD_GUILD_ID")
+GUILD_ID = int(_guild_id_env) if _guild_id_env else None
 
 if not TOKEN:
     raise RuntimeError("DISCORD_TOKEN not set in .env")
@@ -163,6 +165,17 @@ async def search_command(interaction: discord.Interaction, query: str):
     await interaction.response.send_message(view=view)
 
 
+@tree.command(name="translations", description="List available Bible translations and your current preference")
+async def translations_command(interaction: discord.Interaction):
+    current = cfg.get_user(interaction.user.id, "translation", DEFAULT_TRANSLATION)
+    lines = [f"**Available Bible translations** (default: `{DEFAULT_TRANSLATION}`)\n"]
+    for key, label in TRANSLATIONS.items():
+        marker = " ← yours" if key == current else ""
+        lines.append(f"- `[{key}]`  {label}{marker}")
+    lines.append("\nUse `/set-translation` to change your preference, or append `[key]` inline (e.g. `John 3:16 [nabre]`).")
+    await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
 @tree.command(name="purgatory-setup", description="Set up the purgatory verification system")
 @discord.app_commands.describe(
     channel="Existing purgatory channel (creates #purgatory if not specified)",
@@ -268,11 +281,225 @@ async def verify_command(interaction: discord.Interaction, member: discord.Membe
     log.info("Verified %s (Purgatory role removed by %s)", member, interaction.user)
 
 
+async def _apply_reaction_role(payload, *, add: bool):
+    reaction_roles = cfg.get("reaction_roles", {})
+    mapping = reaction_roles.get(str(payload.message_id))
+    if not mapping:
+        return
+    role_id = mapping.get(str(payload.emoji))
+    if role_id is None:
+        return
+    guild = client.get_guild(payload.guild_id)
+    if guild is None:
+        return
+    member = guild.get_member(payload.user_id)
+    if member is None or member.bot:
+        return
+    role = guild.get_role(role_id)
+    if role is None:
+        return
+    if add:
+        await member.add_roles(role, reason="Reaction role")
+        log.info("Added role %s to %s via reaction", role, member)
+    else:
+        await member.remove_roles(role, reason="Reaction role removed")
+        log.info("Removed role %s from %s via reaction", role, member)
+
+
+@client.event
+async def on_raw_reaction_add(payload):
+    if payload.guild_id is None or payload.user_id == client.user.id:
+        return
+    await _apply_reaction_role(payload, add=True)
+
+
+@client.event
+async def on_raw_reaction_remove(payload):
+    if payload.guild_id is None:
+        return
+    await _apply_reaction_role(payload, add=False)
+
+
+@tree.command(name="reaction-role-setup", description="Post a reaction role message in a channel")
+@discord.app_commands.describe(
+    channel="Channel to post the message in",
+    title="Title shown on the embed",
+    emoji1="First emoji", role1="Role for first emoji",
+    emoji2="Second emoji", role2="Role for second emoji",
+    emoji3="Third emoji", role3="Role for third emoji",
+    emoji4="Fourth emoji", role4="Role for fourth emoji",
+    emoji5="Fifth emoji", role5="Role for fifth emoji",
+)
+@discord.app_commands.default_permissions(manage_roles=True)
+async def reaction_role_setup_command(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+    title: str,
+    emoji1: str, role1: discord.Role,
+    emoji2: str = None, role2: discord.Role = None,
+    emoji3: str = None, role3: discord.Role = None,
+    emoji4: str = None, role4: discord.Role = None,
+    emoji5: str = None, role5: discord.Role = None,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    pairs = [(e, r) for e, r in [
+        (emoji1, role1), (emoji2, role2), (emoji3, role3),
+        (emoji4, role4), (emoji5, role5),
+    ] if e and r]
+
+    description = "\n".join(f"{e}  →  {r.mention}" for e, r in pairs)
+    embed = discord.Embed(title=title, description=description, color=discord.Color.blurple())
+    embed.set_footer(text="React to receive a role. Remove your reaction to remove the role.")
+
+    msg = await channel.send(embed=embed)
+
+    reaction_roles = cfg.get("reaction_roles", {})
+    reaction_roles[str(msg.id)] = {e: r.id for e, r in pairs}
+    cfg.set("reaction_roles", reaction_roles)
+
+    for emoji, _ in pairs:
+        try:
+            await msg.add_reaction(emoji)
+        except discord.HTTPException:
+            log.warning("Could not add reaction %s to message %s", emoji, msg.id)
+
+    await interaction.followup.send(
+        f"Reaction role message posted in {channel.mention} with {len(pairs)} role(s).",
+        ephemeral=True,
+    )
+    log.info("Reaction role message %s created by %s", msg.id, interaction.user)
+
+
+@tree.command(name="reaction-role-add", description="Add more emoji→role pairs to an existing reaction role message")
+@discord.app_commands.describe(
+    message_id="ID of the reaction role message to extend",
+    emoji1="First emoji", role1="Role for first emoji",
+    emoji2="Second emoji", role2="Role for second emoji",
+    emoji3="Third emoji", role3="Role for third emoji",
+    emoji4="Fourth emoji", role4="Role for fourth emoji",
+    emoji5="Fifth emoji", role5="Role for fifth emoji",
+)
+@discord.app_commands.default_permissions(manage_roles=True)
+async def reaction_role_add_command(
+    interaction: discord.Interaction,
+    message_id: str,
+    emoji1: str, role1: discord.Role,
+    emoji2: str = None, role2: discord.Role = None,
+    emoji3: str = None, role3: discord.Role = None,
+    emoji4: str = None, role4: discord.Role = None,
+    emoji5: str = None, role5: discord.Role = None,
+):
+    await interaction.response.defer(ephemeral=True)
+
+    reaction_roles = cfg.get("reaction_roles", {})
+    if message_id not in reaction_roles:
+        await interaction.followup.send("No reaction role message found with that ID.", ephemeral=True)
+        return
+
+    pairs = [(e, r) for e, r in [
+        (emoji1, role1), (emoji2, role2), (emoji3, role3),
+        (emoji4, role4), (emoji5, role5),
+    ] if e and r]
+
+    reaction_roles[message_id].update({e: r.id for e, r in pairs})
+    cfg.set("reaction_roles", reaction_roles)
+
+    # Find the message across all channels to add reactions
+    msg = None
+    for ch in interaction.guild.text_channels:
+        try:
+            msg = await ch.fetch_message(int(message_id))
+            break
+        except (discord.NotFound, discord.Forbidden):
+            continue
+
+    if msg:
+        for emoji, _ in pairs:
+            try:
+                await msg.add_reaction(emoji)
+            except discord.HTTPException:
+                log.warning("Could not add reaction %s to message %s", emoji, message_id)
+
+        # Rebuild embed description from the full updated mapping
+        full_mapping = reaction_roles[message_id]
+        lines = []
+        for emoji, role_id in full_mapping.items():
+            role = interaction.guild.get_role(role_id)
+            role_str = role.mention if role else f"(unknown role)"
+            lines.append(f"{emoji}  →  {role_str}")
+        if msg.embeds:
+            embed = msg.embeds[0]
+            embed.description = "\n".join(lines)
+            await msg.edit(embed=embed)
+
+    await interaction.followup.send(
+        f"Added {len(pairs)} emoji→role pair(s) to message `{message_id}`.",
+        ephemeral=True,
+    )
+    log.info("Reaction role message %s updated by %s", message_id, interaction.user)
+
+
+@tree.command(name="reaction-role-list", description="List all configured reaction role messages")
+@discord.app_commands.default_permissions(manage_roles=True)
+async def reaction_role_list_command(interaction: discord.Interaction):
+    reaction_roles = cfg.get("reaction_roles", {})
+    if not reaction_roles:
+        await interaction.response.send_message("No reaction role messages configured.", ephemeral=True)
+        return
+
+    lines = []
+    for msg_id, mapping in reaction_roles.items():
+        pairs = []
+        for emoji, role_id in mapping.items():
+            role = interaction.guild.get_role(role_id)
+            role_str = role.mention if role else f"(deleted role {role_id})"
+            pairs.append(f"{emoji} → {role_str}")
+        lines.append(f"**Message `{msg_id}`**\n" + "\n".join(pairs))
+
+    await interaction.response.send_message("\n\n".join(lines), ephemeral=True)
+
+
+@tree.command(name="reaction-role-remove", description="Delete a reaction role message and remove its configuration")
+@discord.app_commands.describe(message_id="ID of the reaction role message to remove")
+@discord.app_commands.default_permissions(manage_roles=True)
+async def reaction_role_remove_command(interaction: discord.Interaction, message_id: str):
+    await interaction.response.defer(ephemeral=True)
+
+    reaction_roles = cfg.get("reaction_roles", {})
+    if message_id not in reaction_roles:
+        await interaction.followup.send("No reaction role message found with that ID.", ephemeral=True)
+        return
+
+    del reaction_roles[message_id]
+    cfg.set("reaction_roles", reaction_roles)
+
+    # Try to delete the actual message
+    deleted = False
+    for ch in interaction.guild.text_channels:
+        try:
+            msg = await ch.fetch_message(int(message_id))
+            await msg.delete()
+            deleted = True
+            break
+        except (discord.NotFound, discord.Forbidden):
+            continue
+
+    status = "Message deleted and config removed." if deleted else "Config removed (message was already deleted or not found)."
+    await interaction.followup.send(status, ephemeral=True)
+    log.info("Reaction role message %s removed by %s", message_id, interaction.user)
+
+
 @client.event
 async def on_ready():
     log.info("Logged in as %s", client.user)
     await tree.sync()
-    log.info("Slash commands synced")
+    if GUILD_ID:
+        guild_obj = discord.Object(id=GUILD_ID)
+        await tree.sync(guild=guild_obj)
+        log.info("Slash commands synced (global + guild %s)", GUILD_ID)
+    else:
+        log.info("Slash commands synced (global only — may take up to 1 hour)")
     if not daily_readings.is_running():
         daily_readings.start()
 
@@ -358,6 +585,15 @@ async def on_message(message):
         await member.remove_roles(role, reason=f"Verified by {message.author}")
         await message.channel.send(f"{member.mention} has been verified and granted access.")
         log.info("Verified %s (Purgatory role removed by %s)", member, message.author)
+
+    if message.content.strip() == "!translations":
+        current = cfg.get_user(message.author.id, "translation", DEFAULT_TRANSLATION)
+        lines = [f"**Available Bible translations** (default: `{DEFAULT_TRANSLATION}`)\n"]
+        for key, label in TRANSLATIONS.items():
+            marker = " ← yours" if key == current else ""
+            lines.append(f"- `[{key}]`  {label}{marker}")
+        lines.append("\nUse `/set-translation` to change your preference, or append `[key]` inline (e.g. `John 3:16 [nabre]`).")
+        await message.channel.send("\n".join(lines))
 
     # Bible verse lookup — check if the message contains a verse reference
     if not message.content.startswith("!"):
