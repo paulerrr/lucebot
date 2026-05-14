@@ -15,6 +15,7 @@ from bible import (
     search_verses, format_bible_search_view, TRANSLATIONS, DEFAULT_TRANSLATION,
 )
 import config as cfg
+from social_interactions import SocialInteractions
 
 load_dotenv()
 cfg.load()
@@ -41,6 +42,8 @@ PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
+
+social = SocialInteractions()
 
 EST = datetime.timezone(datetime.timedelta(hours=-5))
 
@@ -585,6 +588,24 @@ async def on_message(message):
         await member.remove_roles(role, reason=f"Verified by {message.author}")
         await message.channel.send(f"{member.mention} has been verified and granted access.")
         log.info("Verified %s (Purgatory role removed by %s)", member, message.author)
+
+    if message.content.startswith("!compliment"):
+        await social.handle_compliment(message, client.user)
+
+    if message.content.startswith("!insult"):
+        await social.handle_insult(message, client.user)
+
+    if message.content.startswith("!blockuser "):
+        await social.handle_blockuser(message)
+
+    if message.content.startswith("!unblockuser "):
+        await social.handle_unblockuser(message)
+
+    if message.content.strip() == "!listblockedusers":
+        await social.handle_listblockedusers(message, client)
+
+    if message.content.strip() == "!reload_messages":
+        await social.handle_reload(message)
 
     if message.content.strip() == "!translations":
         current = cfg.get_user(message.author.id, "translation", DEFAULT_TRANSLATION)
