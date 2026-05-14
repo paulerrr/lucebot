@@ -19,6 +19,8 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - `/search` slash command to search the Bible by keyword or phrase
 - Purgatory verification system — new members are held in a restricted channel until a mod verifies them
 - `!verify @member` command (and `/verify` slash command) to remove the Purgatory role and grant server access
+- `!compliment [@member]` — sends a random compliment to the mentioned member (or yourself if omitted)
+- `!insult [@member]` — sends a random playful insult to the mentioned member (or yourself if omitted)
 
 ## Setup
 
@@ -93,6 +95,21 @@ DISCORD_PURGATORY_ROLE_ID=your-role-id-here
 > volumes:
 >   - ./config.json:/app/config.json
 > ```
+
+## Social Interactions
+
+`!compliment` and `!insult` send a random message to the mentioned member (or the caller if no mention). Messages cycle through the full pool before repeating, with a separate shuffle per guild.
+
+**Admin commands** (requires Administrator permission):
+
+| Command | Description |
+|---|---|
+| `!blockuser @member` | Prevent a member from using `!compliment` and `!insult` |
+| `!unblockuser @member` | Remove the block |
+| `!listblockedusers` | Show all currently blocked members |
+| `!reload_messages` | Hot-reload compliment/insult files without restarting |
+
+Message lists are stored in `data/social_interactions/compliments.md` and `data/social_interactions/insults.md`. Blocked users are persisted in `data/social_interactions/blocked_users.json` (mounted as a Docker volume).
 
 ## Discord Bot Permissions
 
