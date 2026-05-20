@@ -39,6 +39,8 @@ _purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
 _purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
 PURGATORY_CHANNEL_ID = int(_purgatory_channel_env) if _purgatory_channel_env else None
 PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
+_log_channel_env = os.getenv("DISCORD_LOG_CHANNEL_ID")
+LOG_CHANNEL_ID = int(_log_channel_env) if _log_channel_env else None
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
@@ -177,6 +179,24 @@ async def translations_command(interaction: discord.Interaction):
         lines.append(f"- `[{key}]`  {label}{marker}")
     lines.append("\nUse `/set-translation` to change your preference, or append `[key]` inline (e.g. `John 3:16 [nabre]`).")
     await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+def _get_log_channel():
+    log_channel_id = LOG_CHANNEL_ID or cfg.get("log_channel_id")
+    if log_channel_id:
+        return client.get_channel(log_channel_id)
+    return None
+
+
+@tree.command(name="set-log-channel", description="Set the channel where member join/leave events are logged")
+@discord.app_commands.describe(channel="The channel to log joins and leaves in")
+@discord.app_commands.default_permissions(manage_guild=True)
+async def set_log_channel_command(interaction: discord.Interaction, channel: discord.TextChannel):
+    cfg.set("log_channel_id", channel.id)
+    await interaction.response.send_message(
+        f"Member join/leave events will now be logged in {channel.mention}.", ephemeral=True
+    )
+    log.info("Log channel set to %s by %s", channel.id, interaction.user)
 
 
 @tree.command(name="purgatory-setup", description="Set up the purgatory verification system")
@@ -511,37 +531,67 @@ async def on_ready():
 async def on_member_join(member):
     purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
     purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
-    if not purgatory_channel_id or not purgatory_role_id:
-        return
+    if purgatory_channel_id and purgatory_role_id:
+        guild = member.guild
+        role = guild.get_role(purgatory_role_id)
+        if role is None:
+            log.error("Purgatory role %s not found in guild", purgatory_role_id)
+        else:
+            try:
+                await member.add_roles(role, reason="New member — awaiting verification")
+            except discord.Forbidden:
+                log.error("Missing permissions to assign purgatory role to %s", member)
+            else:
+                channel = client.get_channel(purgatory_channel_id)
+                if channel is None:
+                    log.error("Purgatory channel %s not found", purgatory_channel_id)
+                else:
+                    await channel.send(
+                        f"Welcome, {member.mention}! Before you can access the server, please answer "
+                        f"the following questions here:\n\n"
+                        f"1. Are you Catholic or enquiring? If not, what denomination or religion?\n"
+                        f"2. Are you 18 years old or older?\n"
+                        f"3. Do you disagree with any traditional Church teachings?\n"
+                        f"4. Are you sedevacantist?\n"
+                        f"5. Do you want a rosary or prayer ping?\n\n"
+                        f"Once you've answered, please ping a mod so they can verify you and grant you access."
+                    )
+                    log.info("Assigned purgatory role and posted verification prompt for %s", member)
 
-    guild = member.guild
-    role = guild.get_role(purgatory_role_id)
-    if role is None:
-        log.error("Purgatory role %s not found in guild", purgatory_role_id)
-        return
+    log_channel = _get_log_channel()
+    if log_channel:
+        created = discord.utils.format_dt(member.created_at, style="D")
+        embed = discord.Embed(
+            title="Member Joined",
+            description=f"{member.mention} ({member})",
+            color=discord.Color.green(),
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.add_field(name="Account Created", value=created)
+        embed.add_field(name="Member Count", value=str(member.guild.member_count))
+        embed.set_footer(text=f"ID: {member.id}")
+        embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+        await log_channel.send(embed=embed)
 
-    try:
-        await member.add_roles(role, reason="New member — awaiting verification")
-    except discord.Forbidden:
-        log.error("Missing permissions to assign purgatory role to %s", member)
-        return
 
-    channel = client.get_channel(purgatory_channel_id)
-    if channel is None:
-        log.error("Purgatory channel %s not found", purgatory_channel_id)
+@client.event
+async def on_member_remove(member):
+    log_channel = _get_log_channel()
+    if not log_channel:
         return
-
-    await channel.send(
-        f"Welcome, {member.mention}! Before you can access the server, please answer "
-        f"the following questions here:\n\n"
-        f"1. Are you Catholic or enquiring? If not, what denomination or religion?\n"
-        f"2. Are you 18 years old or older?\n"
-        f"3. Do you disagree with any traditional Church teachings?\n"
-        f"4. Are you sedevacantist?\n"
-        f"5. Do you want a rosary or prayer ping?\n\n"
-        f"Once you've answered, please ping a mod so they can verify you and grant you access."
+    roles = [r.mention for r in member.roles if r.name != "@everyone"]
+    embed = discord.Embed(
+        title="Member Left",
+        description=f"{member.mention} ({member})",
+        color=discord.Color.red(),
     )
-    log.info("Assigned purgatory role and posted verification prompt for %s", member)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    if roles:
+        embed.add_field(name="Roles", value=" ".join(roles), inline=False)
+    embed.add_field(name="Member Count", value=str(member.guild.member_count))
+    embed.set_footer(text=f"ID: {member.id}")
+    embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+    await log_channel.send(embed=embed)
 
 
 @client.event

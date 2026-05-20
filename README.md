@@ -31,10 +31,11 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    DISCORD_CHANNEL_ID=your-channel-id-here
    DISCORD_QUOTE_CHANNEL_ID=your-quote-channel-id-here
    DISCORD_SAINT_CHANNEL_ID=your-saint-channel-id-here
+   DISCORD_LOG_CHANNEL_ID=your-log-channel-id-here
    READINGS_TYPE=novus_ordo  # or "latin" for Traditional Latin Mass
    ```
 
-   `DISCORD_QUOTE_CHANNEL_ID`, `DISCORD_SAINT_CHANNEL_ID`, and the purgatory variables are all optional.
+   `DISCORD_QUOTE_CHANNEL_ID`, `DISCORD_SAINT_CHANNEL_ID`, `DISCORD_LOG_CHANNEL_ID`, and the purgatory variables are all optional.
 
 2. Run the bot with Docker Compose:
 
@@ -55,6 +56,25 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
    ```bash
    python bot.py
    ```
+
+## Member Join/Leave Logging
+
+When a member joins or leaves, the bot posts an embed to the configured log channel.
+
+- **Join embed**: member mention, account creation date, new member count
+- **Leave embed**: member mention, roles held at the time of leaving, new member count
+
+Set the log channel via env var or slash command:
+
+```
+DISCORD_LOG_CHANNEL_ID=your-channel-id-here
+```
+
+```
+/set-log-channel channel:#mod-log
+```
+
+The slash command saves to `config.json` and takes effect immediately. The env var takes precedence if both are set.
 
 ## Purgatory Verification
 
