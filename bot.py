@@ -513,6 +513,62 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     log.info("Reaction role message %s removed by %s", message_id, interaction.user)
 
 
+@tasks.loop(hours=1)
+async def kick_unverified_members():
+    """Kick purgatory members who haven't posted in 3 days."""
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)
+
+    for guild in client.guilds:
+        purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+        purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
+
+        if not purgatory_role_id or not purgatory_channel_id:
+            continue
+
+        role = guild.get_role(purgatory_role_id)
+        channel = client.get_channel(purgatory_channel_id)
+
+        if role is None or channel is None:
+            continue
+
+        for member in list(role.members):
+            if member.joined_at is None or member.joined_at > cutoff:
+                continue
+
+            has_posted = False
+            try:
+                async for msg in channel.history(after=member.joined_at, limit=500):
+                    if msg.author.id == member.id:
+                        has_posted = True
+                        break
+            except discord.Forbidden:
+                log.warning("Cannot read history in purgatory channel %s", channel.id)
+                continue
+
+            if has_posted:
+                continue
+
+            try:
+                await member.kick(reason="No response to verification questions within 3 days")
+                log.info("Kicked %s — no verification response after 3 days", member)
+            except discord.Forbidden:
+                log.error("Missing permissions to kick %s", member)
+                continue
+
+            log_channel = _get_log_channel()
+            if log_channel:
+                embed = discord.Embed(
+                    title="Member Kicked — Verification Timeout",
+                    description=f"{member.mention} ({member})",
+                    color=discord.Color.orange(),
+                )
+                embed.add_field(name="Reason", value="No response to verification questions within 3 days")
+                embed.set_thumbnail(url=member.display_avatar.url)
+                embed.set_footer(text=f"ID: {member.id}")
+                embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
+                await log_channel.send(embed=embed)
+
+
 @client.event
 async def on_ready():
     log.info("Logged in as %s", client.user)
@@ -525,6 +581,8 @@ async def on_ready():
         log.info("Slash commands synced (global only — may take up to 1 hour)")
     if not daily_readings.is_running():
         daily_readings.start()
+    if not kick_unverified_members.is_running():
+        kick_unverified_members.start()
 
 
 @client.event
