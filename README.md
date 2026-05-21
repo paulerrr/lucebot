@@ -88,6 +88,8 @@ When a new member joins, the bot automatically assigns them the **Purgatory** ro
 
 Once answered, they ping a mod for manual review and role removal using `!verify @member` or `/verify @member`.
 
+Members who have not posted any message in `#purgatory` within **3 days** of joining are automatically kicked. The bot checks every hour and logs the kick to the configured log channel if one is set.
+
 ### Setting up purgatory
 
 Run the `/purgatory-setup` slash command in your server (requires **Manage Server** permission). The bot will:
