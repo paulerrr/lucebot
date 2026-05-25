@@ -5,7 +5,7 @@ A Discord moderation bot for Roman Catholic servers.
 ## Features
 
 - **Purgatory verification** — new members are held in a restricted channel until a mod verifies them
-- **Member join/leave logging** — embeds posted to a configurable log channel
+- **Moderation logging** — configurable per-category log channels for messages, members, and joins/leaves
 - **Reaction roles** — emoji-to-role mapping via slash commands
 - `!compliment [@member]` — sends a random compliment to the mentioned member (or yourself if omitted)
 - `!insult [@member]` — sends a random playful insult to the mentioned member (or yourself if omitted)
@@ -65,28 +65,40 @@ DISCORD_PURGATORY_CHANNEL_ID=your-channel-id-here
 DISCORD_PURGATORY_ROLE_ID=your-role-id-here
 ```
 
-> **Docker note:** mount `config.json` as a volume to preserve config across container rebuilds:
+> **Docker note:** mount both persistent files as volumes to preserve config and message history across container rebuilds:
 > ```yaml
 > volumes:
 >   - ./config.json:/app/config.json
+>   - ./data:/app/data
 > ```
 
-## Member Join/Leave Logging
+## Moderation Logging
 
-When a member joins or leaves, the bot posts an embed to the configured log channel.
+Log events are split into three categories, each with its own configurable channel. Any category without a dedicated channel falls back to the join/leave channel.
 
-- **Join embed**: member mention, account creation date, new member count
-- **Leave embed**: member mention, roles held at the time of leaving, new member count
+| Category | Events logged |
+|---|---|
+| **join** | Member joined, member left |
+| **message** | Message deleted, message edited, bulk purge, invite links posted |
+| **member** | Role added/removed, nickname changed, username changed, timed out, timeout removed, banned, unbanned |
 
-Set the log channel via slash command or env var:
+Set channels with `/set-log-channel` (requires **Manage Server**):
 
 ```
-/set-log-channel channel:#mod-log
+/set-log-channel log_type:join/leave    channel:#join-log
+/set-log-channel log_type:message       channel:#message-log
+/set-log-channel log_type:member        channel:#member-log
 ```
+
+To route everything to one channel, only set the `join/leave` channel — the others will fall back to it.
+
+You can also pre-set the join/leave channel via env var:
 
 ```
 DISCORD_LOG_CHANNEL_ID=your-channel-id-here
 ```
+
+Message content is persisted to `data/messages.db` (SQLite) as messages arrive, so delete and edit logs work even for messages that have scrolled out of Discord's memory cache. The only messages that can't be recovered are those sent before the bot was first deployed.
 
 ## Reaction Roles
 
@@ -119,4 +131,8 @@ Enable the following in the [Discord Developer Portal](https://discord.com/devel
 - **Message Content** privileged intent
 - **Server Members** privileged intent
 
-The bot also needs **Manage Roles** permission, and its role must be positioned **above** the Purgatory role in the role list.
+The bot needs the following permissions:
+
+- **Manage Roles** — to assign/remove the Purgatory role (must be positioned above it in the role list)
+- **View Audit Log** — recommended so ban/kick events include the responsible moderator
+- **Read Message History** — required to fetch messages in reaction role commands

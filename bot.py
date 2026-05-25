@@ -1,11 +1,14 @@
 import datetime
+import io
 import logging
 import os
+import re
 
 import discord
 from dotenv import load_dotenv
 
 import config as cfg
+import message_store
 from social_interactions import SocialInteractions
 
 load_dotenv()
@@ -35,23 +38,62 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 
+INVITE_RE = re.compile(r"discord(?:\.gg|(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
 
-def _get_log_channel():
-    log_channel_id = LOG_CHANNEL_ID or cfg.get("log_channel_id")
-    if log_channel_id:
-        return client.get_channel(log_channel_id)
+# Maps log_type → config key. "join" reuses the existing key for backwards compat.
+_LOG_TYPE_KEYS = {
+    "join": "log_channel_id",
+    "message": "message_log_channel_id",
+    "member": "member_log_channel_id",
+}
+
+
+def _get_log_channel(log_type: str = None):
+    """Return the log channel for log_type, falling back to the join/generic channel."""
+    if log_type:
+        key = _LOG_TYPE_KEYS.get(log_type)
+        if key:
+            channel_id = cfg.get(key)
+            if channel_id:
+                ch = client.get_channel(channel_id)
+                if ch:
+                    return ch
+    fallback_id = LOG_CHANNEL_ID or cfg.get("log_channel_id")
+    if fallback_id:
+        return client.get_channel(fallback_id)
     return None
 
 
-@tree.command(name="set-log-channel", description="Set the channel where member join/leave events are logged")
-@discord.app_commands.describe(channel="The channel to log joins and leaves in")
+# ── slash commands ─────────────────────────────────────────────────────────────
+
+@tree.command(name="set-log-channel", description="Set the channel for a category of log events")
+@discord.app_commands.describe(
+    log_type="Which events to log in this channel",
+    channel="The channel to send log events to",
+)
+@discord.app_commands.choices(log_type=[
+    discord.app_commands.Choice(name="join/leave — member join and leave events", value="join"),
+    discord.app_commands.Choice(name="message — delete, edit, purge, invite links", value="message"),
+    discord.app_commands.Choice(name="member — role changes, nicknames, bans, timeouts", value="member"),
+])
 @discord.app_commands.default_permissions(manage_guild=True)
-async def set_log_channel_command(interaction: discord.Interaction, channel: discord.TextChannel):
-    cfg.set("log_channel_id", channel.id)
+async def set_log_channel_command(
+    interaction: discord.Interaction,
+    log_type: str,
+    channel: discord.TextChannel,
+):
+    cfg.set(_LOG_TYPE_KEYS[log_type], channel.id)
+    labels = {
+        "join": "Join/leave events",
+        "message": "Message events (delete/edit/purge/invites)",
+        "member": "Member events (roles/nicknames/bans/timeouts)",
+    }
     await interaction.response.send_message(
-        f"Member join/leave events will now be logged in {channel.mention}.", ephemeral=True
+        f"{labels[log_type]} will now be logged in {channel.mention}.\n"
+        f"*Any log type without a dedicated channel falls back to the join/leave channel.*",
+        ephemeral=True,
     )
-    log.info("Log channel set to %s by %s", channel.id, interaction.user)
+    log.info("Log channel for '%s' set to %s by %s", log_type, channel.id, interaction.user)
 
 
 @tree.command(name="purgatory-setup", description="Set up the purgatory verification system")
@@ -360,10 +402,18 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     log.info("Reaction role message %s removed by %s", message_id, interaction.user)
 
 
+# ── gateway events ─────────────────────────────────────────────────────────────
+
+_store_ready = False
+
 
 @client.event
 async def on_ready():
+    global _store_ready
     log.info("Logged in as %s", client.user)
+    if not _store_ready:
+        await message_store.init()
+        _store_ready = True
     await tree.sync()
     if GUILD_ID:
         guild_obj = discord.Object(id=GUILD_ID)
@@ -404,7 +454,7 @@ async def on_member_join(member):
                     )
                     log.info("Assigned purgatory role and posted verification prompt for %s", member)
 
-    log_channel = _get_log_channel()
+    log_channel = _get_log_channel("join")
     if log_channel:
         created = discord.utils.format_dt(member.created_at, style="D")
         embed = discord.Embed(
@@ -422,7 +472,7 @@ async def on_member_join(member):
 
 @client.event
 async def on_member_remove(member):
-    log_channel = _get_log_channel()
+    log_channel = _get_log_channel("join")
     if not log_channel:
         return
     roles = [r.mention for r in member.roles if r.name != "@everyone"]
@@ -441,9 +491,263 @@ async def on_member_remove(member):
 
 
 @client.event
+async def on_raw_message_delete(payload):
+    if not payload.guild_id:
+        return
+    ch = _get_log_channel("message")
+    if not ch:
+        return
+
+    cached = payload.cached_message
+    if cached:
+        if cached.author.bot:
+            return
+        author_name = str(cached.author)
+        author_avatar = str(cached.author.display_avatar.url)
+        author_id = cached.author.id
+        content = cached.content
+    else:
+        stored = await message_store.get(payload.message_id)
+        if not stored:
+            return
+        author_name = stored["author_name"]
+        author_avatar = stored["author_avatar"]
+        author_id = stored["author_id"]
+        content = stored["content"]
+
+    await message_store.delete(payload.message_id)
+
+    embed = discord.Embed(
+        title="Message Deleted",
+        color=discord.Color.red(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_author(name=author_name, icon_url=author_avatar)
+    embed.add_field(name="Channel", value=f"<#{payload.channel_id}>", inline=True)
+    if content:
+        embed.add_field(name="Content", value=content[:1024], inline=False)
+    embed.set_footer(text=f"User ID: {author_id} | Message ID: {payload.message_id}")
+    await ch.send(embed=embed)
+
+
+@client.event
+async def on_raw_message_edit(payload):
+    if not payload.guild_id:
+        return
+
+    new_content = payload.data.get("content", "")
+
+    cached = payload.cached_message
+    if cached:
+        if cached.author.bot:
+            return
+        old_content = cached.content
+        author_name = str(cached.author)
+        author_avatar = str(cached.author.display_avatar.url)
+        author_id = cached.author.id
+    else:
+        stored = await message_store.get(payload.message_id)
+        if not stored:
+            return
+        old_content = stored["content"]
+        author_name = stored["author_name"]
+        author_avatar = stored["author_avatar"]
+        author_id = stored["author_id"]
+
+    if old_content == new_content:
+        return
+
+    await message_store.update_content(payload.message_id, new_content)
+
+    ch = _get_log_channel("message")
+    if not ch:
+        return
+
+    jump_url = f"https://discord.com/channels/{payload.guild_id}/{payload.channel_id}/{payload.message_id}"
+    embed = discord.Embed(
+        title="Message Edited",
+        color=discord.Color.orange(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_author(name=author_name, icon_url=author_avatar)
+    embed.add_field(name="Channel", value=f"<#{payload.channel_id}>", inline=True)
+    embed.add_field(name="Before", value=old_content[:1024] or "(empty)", inline=False)
+    embed.add_field(name="After", value=new_content[:1024] or "(empty)", inline=False)
+    embed.add_field(name="Jump", value=f"[Go to message]({jump_url})", inline=True)
+    embed.set_footer(text=f"User ID: {author_id} | Message ID: {payload.message_id}")
+    await ch.send(embed=embed)
+
+
+@client.event
+async def on_raw_bulk_message_delete(payload):
+    if not payload.guild_id:
+        return
+    ch = _get_log_channel("message")
+    if not ch:
+        return
+
+    message_ids = list(payload.message_ids)
+    stored = await message_store.get_many(message_ids)
+    await message_store.delete_many(message_ids)
+
+    embed = discord.Embed(
+        title="Messages Purged",
+        description=f"{len(message_ids)} messages deleted in <#{payload.channel_id}>",
+        color=discord.Color.dark_red(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    if stored:
+        embed.add_field(name="Recovered", value=f"{len(stored)}/{len(message_ids)} messages — see attached log", inline=False)
+    embed.set_footer(text=f"Channel ID: {payload.channel_id}")
+    await ch.send(embed=embed)
+
+    if stored:
+        lines = []
+        for msg in sorted(stored, key=lambda m: m["created_at"]):
+            ts = datetime.datetime.fromtimestamp(msg["created_at"], tz=datetime.timezone.utc)
+            lines.append(f"[{ts.strftime('%Y-%m-%d %H:%M:%S UTC')}] {msg['author_name']}: {msg['content']}")
+        await ch.send(file=discord.File(io.BytesIO("\n".join(lines).encode()), filename="purged_messages.txt"))
+
+
+@client.event
+async def on_member_update(before, after):
+    ch = _get_log_channel("member")
+    if not ch:
+        return
+
+    added = [r for r in after.roles if r not in before.roles]
+    removed = [r for r in before.roles if r not in after.roles]
+    if added or removed:
+        embed = discord.Embed(
+            title="Member Roles Updated",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_author(name=str(after), icon_url=after.display_avatar.url)
+        if added:
+            embed.add_field(name="Added", value=" ".join(r.mention for r in added), inline=False)
+        if removed:
+            embed.add_field(name="Removed", value=" ".join(r.mention for r in removed), inline=False)
+        embed.set_footer(text=f"User ID: {after.id}")
+        await ch.send(embed=embed)
+
+    if before.nick != after.nick:
+        embed = discord.Embed(
+            title="Nickname Changed",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_author(name=str(after), icon_url=after.display_avatar.url)
+        embed.add_field(name="Before", value=before.nick or "(none)", inline=True)
+        embed.add_field(name="After", value=after.nick or "(none)", inline=True)
+        embed.set_footer(text=f"User ID: {after.id}")
+        await ch.send(embed=embed)
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if before.timed_out_until != after.timed_out_until:
+        if after.timed_out_until and after.timed_out_until > now:
+            embed = discord.Embed(
+                title="Member Timed Out",
+                color=discord.Color.orange(),
+                timestamp=now,
+            )
+            embed.set_author(name=str(after), icon_url=after.display_avatar.url)
+            embed.add_field(
+                name="Until",
+                value=discord.utils.format_dt(after.timed_out_until, style="F"),
+                inline=False,
+            )
+        else:
+            embed = discord.Embed(
+                title="Timeout Removed",
+                color=discord.Color.green(),
+                timestamp=now,
+            )
+            embed.set_author(name=str(after), icon_url=after.display_avatar.url)
+        embed.set_footer(text=f"User ID: {after.id}")
+        await ch.send(embed=embed)
+
+
+@client.event
+async def on_user_update(before, after):
+    if before.name == after.name and before.display_name == after.display_name:
+        return
+    for guild in client.guilds:
+        if guild.get_member(after.id) is None:
+            continue
+        ch = _get_log_channel("member")
+        if not ch:
+            continue
+        embed = discord.Embed(
+            title="Username Changed",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc),
+        )
+        embed.set_author(name=str(after), icon_url=after.display_avatar.url)
+        if before.name != after.name:
+            embed.add_field(name="Username Before", value=before.name, inline=True)
+            embed.add_field(name="Username After", value=after.name, inline=True)
+        if before.display_name != after.display_name:
+            embed.add_field(name="Display Name Before", value=before.display_name, inline=True)
+            embed.add_field(name="Display Name After", value=after.display_name, inline=True)
+        embed.set_footer(text=f"User ID: {after.id}")
+        await ch.send(embed=embed)
+
+
+@client.event
+async def on_member_ban(guild, user):
+    ch = _get_log_channel("member")
+    if not ch:
+        return
+    embed = discord.Embed(
+        title="Member Banned",
+        description=f"{user.mention} ({user})",
+        color=discord.Color.dark_red(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_thumbnail(url=user.display_avatar.url)
+    embed.set_footer(text=f"User ID: {user.id}")
+    await ch.send(embed=embed)
+
+
+@client.event
+async def on_member_unban(guild, user):
+    ch = _get_log_channel("member")
+    if not ch:
+        return
+    embed = discord.Embed(
+        title="Member Unbanned",
+        description=f"{user.mention} ({user})",
+        color=discord.Color.green(),
+        timestamp=datetime.datetime.now(datetime.timezone.utc),
+    )
+    embed.set_thumbnail(url=user.display_avatar.url)
+    embed.set_footer(text=f"User ID: {user.id}")
+    await ch.send(embed=embed)
+
+
+@client.event
 async def on_message(message):
     if message.author == client.user:
         return
+
+    if message.guild and not message.author.bot:
+        await message_store.store(message)
+
+    if message.guild and not message.author.bot and INVITE_RE.search(message.content):
+        ch = _get_log_channel("message")
+        if ch:
+            embed = discord.Embed(
+                title="Invite Link Posted",
+                color=discord.Color.gold(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc),
+            )
+            embed.set_author(name=str(message.author), icon_url=message.author.display_avatar.url)
+            embed.add_field(name="Channel", value=message.channel.mention, inline=True)
+            embed.add_field(name="Content", value=message.content[:1024], inline=False)
+            embed.add_field(name="Jump", value=f"[Go to message]({message.jump_url})", inline=True)
+            embed.set_footer(text=f"User ID: {message.author.id} | Message ID: {message.id}")
+            await ch.send(embed=embed)
 
     if message.content.startswith("!verify "):
         if not message.author.guild_permissions.manage_roles:
