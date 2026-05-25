@@ -3,17 +3,8 @@ import logging
 import os
 
 import discord
-from discord.ext import tasks
 from dotenv import load_dotenv
 
-from readings import get_daily_readings, format_for_discord
-from latin_readings import get_latin_readings, format_latin_for_discord
-from quotes import get_daily_quote, format_quote_for_discord
-from saints import get_daily_saint
-from bible import (
-    parse_verse_reference, lookup_verses, format_bible_view,
-    search_verses, format_bible_search_view, TRANSLATIONS, DEFAULT_TRANSLATION,
-)
 import config as cfg
 from social_interactions import SocialInteractions
 
@@ -21,164 +12,28 @@ load_dotenv()
 cfg.load()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_ID = os.getenv("DISCORD_CHANNEL_ID")
-QUOTE_CHANNEL_ID = os.getenv("DISCORD_QUOTE_CHANNEL_ID")
-SAINT_CHANNEL_ID = os.getenv("DISCORD_SAINT_CHANNEL_ID")
-READINGS_TYPE = os.getenv("READINGS_TYPE", "novus_ordo").lower()
 _guild_id_env = os.getenv("DISCORD_GUILD_ID")
 GUILD_ID = int(_guild_id_env) if _guild_id_env else None
-
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN not set in .env")
-if not CHANNEL_ID:
-    raise RuntimeError("DISCORD_CHANNEL_ID not set in .env")
-CHANNEL_ID = int(CHANNEL_ID)
-QUOTE_CHANNEL_ID = int(QUOTE_CHANNEL_ID) if QUOTE_CHANNEL_ID else None
-SAINT_CHANNEL_ID = int(SAINT_CHANNEL_ID) if SAINT_CHANNEL_ID else None
 _purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
-_purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
 PURGATORY_CHANNEL_ID = int(_purgatory_channel_env) if _purgatory_channel_env else None
+_purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
 PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
 _log_channel_env = os.getenv("DISCORD_LOG_CHANNEL_ID")
 LOG_CHANNEL_ID = int(_log_channel_env) if _log_channel_env else None
+
+if not TOKEN:
+    raise RuntimeError("DISCORD_TOKEN not set in .env")
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
 
 social = SocialInteractions()
 
-EST = datetime.timezone(datetime.timedelta(hours=-5))
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
-
-
-async def post_readings(channel):
-    """Fetch readings and send them to the given channel."""
-    mass = await get_daily_readings()
-    if mass is None:
-        await channel.send("Could not fetch today's readings.")
-        return
-
-    embeds = format_for_discord(mass)
-
-    for embed in embeds:
-        await channel.send(embed=embed)
-
-
-async def post_latin_readings(channel):
-    """Fetch TLM propers and send them to the given channel."""
-    data = await get_latin_readings()
-    if data is None:
-        await channel.send("Could not fetch today's Traditional Latin Mass readings.")
-        return
-
-    embeds = format_latin_for_discord(data)
-
-    for embed in embeds:
-        await channel.send(embed=embed)
-
-
-async def post_quote(channel):
-    """Fetch a random saint quote and send it to the given channel."""
-    quote = get_daily_quote()
-    embed = format_quote_for_discord(quote)
-    await channel.send(embed=embed)
-
-
-async def post_saint(channel, *, manual=False):
-    """Fetch the saint of the day and send it to the given channel."""
-    result = await get_daily_saint()
-    if result is None:
-        if manual:
-            await channel.send("Could not fetch saint data.")
-        return
-    if result == "no_feast":
-        if manual:
-            await channel.send("No saint feast today.")
-        return
-    await channel.send(embeds=result)
-
-
-@tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
-async def daily_readings():
-    """Post readings and quote every day at 7:00 AM EST."""
-    channel = client.get_channel(CHANNEL_ID)
-    if channel is None:
-        log.error("Channel %s not found", CHANNEL_ID)
-    else:
-        log.info("Posting daily readings (type=%s)", READINGS_TYPE)
-        try:
-            if READINGS_TYPE == "latin":
-                await post_latin_readings(channel)
-            else:
-                await post_readings(channel)
-        except Exception:
-            log.exception("Failed to post daily readings")
-
-    if QUOTE_CHANNEL_ID:
-        quote_channel = client.get_channel(QUOTE_CHANNEL_ID)
-        if quote_channel is None:
-            log.error("Quote channel %s not found", QUOTE_CHANNEL_ID)
-        else:
-            log.info("Posting daily quote")
-            try:
-                await post_quote(quote_channel)
-            except Exception:
-                log.exception("Failed to post daily quote")
-
-    if SAINT_CHANNEL_ID:
-        saint_channel = client.get_channel(SAINT_CHANNEL_ID)
-        if saint_channel is None:
-            log.error("Saint channel %s not found", SAINT_CHANNEL_ID)
-        else:
-            log.info("Posting daily saint")
-            try:
-                await post_saint(saint_channel)
-            except Exception:
-                log.exception("Failed to post daily saint")
-
-
-@tree.command(name="set-translation", description="Set your preferred Bible translation")
-@discord.app_commands.describe(translation="The translation to use for your Bible verse lookups")
-@discord.app_commands.choices(translation=[
-    discord.app_commands.Choice(name="Knox Bible", value="knox"),
-    discord.app_commands.Choice(name="Douay-Rheims", value="dr"),
-    discord.app_commands.Choice(name="Clementine Vulgate (Latin)", value="vul"),
-    discord.app_commands.Choice(name="RSV Catholic Edition", value="rsvce"),
-    discord.app_commands.Choice(name="New American Bible Revised Edition", value="nabre"),
-])
-async def set_translation_command(interaction: discord.Interaction, translation: str):
-    cfg.set_user(interaction.user.id, "translation", translation)
-    label = TRANSLATIONS.get(translation, translation)
-    await interaction.response.send_message(
-        f"Your Bible translation has been set to **{label}**.", ephemeral=True
-    )
-    log.info("User %s set translation to %s", interaction.user, translation)
-
-
-@tree.command(name="search", description="Search the Bible for a word or phrase")
-@discord.app_commands.describe(query="The word or phrase to search for")
-async def search_command(interaction: discord.Interaction, query: str):
-    log.info("Bible search from %s: %s", interaction.user, query)
-    translation = cfg.get_user(interaction.user.id, "translation", DEFAULT_TRANSLATION)
-    results = search_verses(query, translation=translation)
-    view = format_bible_search_view(query, results, translation=translation)
-    await interaction.response.send_message(view=view)
-
-
-@tree.command(name="translations", description="List available Bible translations and your current preference")
-async def translations_command(interaction: discord.Interaction):
-    current = cfg.get_user(interaction.user.id, "translation", DEFAULT_TRANSLATION)
-    lines = [f"**Available Bible translations** (default: `{DEFAULT_TRANSLATION}`)\n"]
-    for key, label in TRANSLATIONS.items():
-        marker = " ← yours" if key == current else ""
-        lines.append(f"- `[{key}]`  {label}{marker}")
-    lines.append("\nUse `/set-translation` to change your preference, or append `[key]` inline (e.g. `John 3:16 [nabre]`).")
-    await interaction.response.send_message("\n".join(lines), ephemeral=True)
 
 
 def _get_log_channel():
@@ -213,7 +68,6 @@ async def purgatory_setup_command(
     await interaction.response.defer(ephemeral=True)
     guild = interaction.guild
 
-    # Resolve or create role
     if role is None:
         role = discord.utils.get(guild.roles, name="Purgatory")
         if role is None:
@@ -228,7 +82,6 @@ async def purgatory_setup_command(
     else:
         role_status = f"Using role {role.mention}"
 
-    # Resolve or create channel
     if channel is None:
         channel = discord.utils.get(guild.text_channels, name="purgatory")
         if channel is None:
@@ -242,12 +95,10 @@ async def purgatory_setup_command(
     else:
         channel_status = f"Using channel {channel.mention}"
 
-    # Allow purgatory role in the purgatory channel
     await channel.set_permissions(
         role, view_channel=True, send_messages=True, read_message_history=True
     )
 
-    # Deny purgatory role access to all other channels
     denied = 0
     for ch in guild.channels:
         if ch.id == channel.id or isinstance(ch, discord.CategoryChannel):
@@ -258,7 +109,6 @@ async def purgatory_setup_command(
         except discord.Forbidden:
             log.warning("Could not set permissions on channel %s", ch)
 
-    # Save to persistent config
     cfg.set("purgatory_channel_id", channel.id)
     cfg.set("purgatory_role_id", role.id)
 
@@ -428,7 +278,6 @@ async def reaction_role_add_command(
     reaction_roles[message_id].update({e: r.id for e, r in pairs})
     cfg.set("reaction_roles", reaction_roles)
 
-    # Find the message across all channels to add reactions
     msg = None
     for ch in interaction.guild.text_channels:
         try:
@@ -444,12 +293,11 @@ async def reaction_role_add_command(
             except discord.HTTPException:
                 log.warning("Could not add reaction %s to message %s", emoji, message_id)
 
-        # Rebuild embed description from the full updated mapping
         full_mapping = reaction_roles[message_id]
         lines = []
         for emoji, role_id in full_mapping.items():
             role = interaction.guild.get_role(role_id)
-            role_str = role.mention if role else f"(unknown role)"
+            role_str = role.mention if role else "(unknown role)"
             lines.append(f"{emoji}  →  {role_str}")
         if msg.embeds:
             embed = msg.embeds[0]
@@ -497,7 +345,6 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     del reaction_roles[message_id]
     cfg.set("reaction_roles", reaction_roles)
 
-    # Try to delete the actual message
     deleted = False
     for ch in interaction.guild.text_channels:
         try:
@@ -513,61 +360,6 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     log.info("Reaction role message %s removed by %s", message_id, interaction.user)
 
 
-@tasks.loop(hours=1)
-async def kick_unverified_members():
-    """Kick purgatory members who haven't posted in 3 days."""
-    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=3)
-
-    for guild in client.guilds:
-        purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
-        purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
-
-        if not purgatory_role_id or not purgatory_channel_id:
-            continue
-
-        role = guild.get_role(purgatory_role_id)
-        channel = client.get_channel(purgatory_channel_id)
-
-        if role is None or channel is None:
-            continue
-
-        for member in list(role.members):
-            if member.joined_at is None or member.joined_at > cutoff:
-                continue
-
-            has_posted = False
-            try:
-                async for msg in channel.history(after=member.joined_at, limit=500):
-                    if msg.author.id == member.id:
-                        has_posted = True
-                        break
-            except discord.Forbidden:
-                log.warning("Cannot read history in purgatory channel %s", channel.id)
-                continue
-
-            if has_posted:
-                continue
-
-            try:
-                await member.kick(reason="No response to verification questions within 3 days")
-                log.info("Kicked %s — no verification response after 3 days", member)
-            except discord.Forbidden:
-                log.error("Missing permissions to kick %s", member)
-                continue
-
-            log_channel = _get_log_channel()
-            if log_channel:
-                embed = discord.Embed(
-                    title="Member Kicked — Verification Timeout",
-                    description=f"{member.mention} ({member})",
-                    color=discord.Color.orange(),
-                )
-                embed.add_field(name="Reason", value="No response to verification questions within 3 days")
-                embed.set_thumbnail(url=member.display_avatar.url)
-                embed.set_footer(text=f"ID: {member.id}")
-                embed.timestamp = datetime.datetime.now(datetime.timezone.utc)
-                await log_channel.send(embed=embed)
-
 
 @client.event
 async def on_ready():
@@ -579,10 +371,6 @@ async def on_ready():
         log.info("Slash commands synced (global + guild %s)", GUILD_ID)
     else:
         log.info("Slash commands synced (global only — may take up to 1 hour)")
-    if not daily_readings.is_running():
-        daily_readings.start()
-    if not kick_unverified_members.is_running():
-        kick_unverified_members.start()
 
 
 @client.event
@@ -657,22 +445,6 @@ async def on_message(message):
     if message.author == client.user:
         return
 
-    if message.content.strip() == "!readings":
-        log.info("Manual readings request from %s", message.author)
-        await post_readings(message.channel)
-
-    if message.content.strip() == "!quote":
-        log.info("Manual quote request from %s", message.author)
-        await post_quote(message.channel)
-
-    if message.content.strip() == "!latin":
-        log.info("Manual TLM readings request from %s", message.author)
-        await post_latin_readings(message.channel)
-
-    if message.content.strip() == "!saint":
-        log.info("Manual saint request from %s", message.author)
-        await post_saint(message.channel, manual=True)
-
     if message.content.startswith("!verify "):
         if not message.author.guild_permissions.manage_roles:
             await message.channel.send("You don't have permission to verify members.")
@@ -714,26 +486,6 @@ async def on_message(message):
 
     if message.content.strip() == "!reload_messages":
         await social.handle_reload(message)
-
-    if message.content.strip() == "!translations":
-        current = cfg.get_user(message.author.id, "translation", DEFAULT_TRANSLATION)
-        lines = [f"**Available Bible translations** (default: `{DEFAULT_TRANSLATION}`)\n"]
-        for key, label in TRANSLATIONS.items():
-            marker = " ← yours" if key == current else ""
-            lines.append(f"- `[{key}]`  {label}{marker}")
-        lines.append("\nUse `/set-translation` to change your preference, or append `[key]` inline (e.g. `John 3:16 [nabre]`).")
-        await message.channel.send("\n".join(lines))
-
-    # Bible verse lookup — check if the message contains a verse reference
-    if not message.content.startswith("!"):
-        parsed = parse_verse_reference(message.content)
-        if parsed:
-            book_id, chapter, verse_start, verse_end, translation_override = parsed
-            translation = translation_override or cfg.get_user(message.author.id, "translation", DEFAULT_TRANSLATION)
-            verses = lookup_verses(book_id, chapter, verse_start, verse_end, translation=translation)
-            if verses:
-                view = format_bible_view(book_id, chapter, verse_start, verse_end, verses, translation=translation)
-                await message.channel.send(view=view)
 
 
 client.run(TOKEN)

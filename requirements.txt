@@ -1,4 +1,2 @@
 discord.py
-catholic-mass-readings @ git+https://github.com/rcolfin/catholic-mass-readings.git
 python-dotenv
-aiohttp
