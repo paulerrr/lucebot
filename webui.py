@@ -798,7 +798,7 @@ def leveling():
         '<div class="field"><label>Notification Channel ID</label>'
         f'<input type="text" name="leveling_notify_channel_id" value="{notify_ch_id}" placeholder="Only used when mode is \'Specific channel\'">'
         '</div>'
-        '<button type="submit" class="btn btn-primary">Save settings</button>'
+        '<button type="submit" class="btn btn-primary" style="margin-top:16px">Save settings</button>'
         '</form></div>'
     )
 
@@ -827,7 +827,7 @@ def leveling():
         '<input type="text" name="reward_role_id" placeholder="e.g. 123456789012345678"></div>'
         '<button type="submit" class="btn btn-primary" style="flex-shrink:0">Add reward</button>'
         '</div></form>'
-        '<div class="hint" style="margin-bottom:14px">Guild ID must be set in Secrets for add/remove to work.</div>'
+        '<div class="hint" style="margin-top:12px;margin-bottom:14px">Guild ID must be set in Secrets for add/remove to work.</div>'
         '<table><thead><tr><th>Level</th><th>Role ID</th><th style="width:100px">Action</th></tr></thead>'
         f'<tbody>{reward_rows}</tbody></table></div>'
     )
