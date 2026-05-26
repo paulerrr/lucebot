@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import io
 import logging
@@ -9,6 +10,7 @@ import discord
 from dotenv import load_dotenv
 
 import config as cfg
+import leveling
 import message_store
 from social_interactions import SocialInteractions
 
@@ -45,6 +47,7 @@ intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
+leveling.setup(tree, client)
 
 INVITE_RE = re.compile(r"discord(?:\.gg|(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
 
@@ -413,6 +416,20 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
 # ── gateway events ─────────────────────────────────────────────────────────────
 
 _store_ready = False
+_RESTART_FLAG = "data/.bot_restart"
+
+
+async def _restart_watcher():
+    while True:
+        await asyncio.sleep(3)
+        if os.path.exists(_RESTART_FLAG):
+            try:
+                os.remove(_RESTART_FLAG)
+            except OSError:
+                pass
+            log.info("Restart flag detected — closing for Docker restart")
+            await client.close()
+            return
 
 
 @client.event
@@ -421,7 +438,9 @@ async def on_ready():
     log.info("Logged in as %s", client.user)
     if not _store_ready:
         await message_store.init()
+        await leveling.init()
         _store_ready = True
+        asyncio.ensure_future(_restart_watcher())
     await tree.sync()
     if GUILD_ID:
         guild_obj = discord.Object(id=GUILD_ID)
@@ -744,6 +763,10 @@ async def on_message(message):
             await message_store.store(message)
         except Exception:
             log.exception("Failed to store message %s", message.id)
+        try:
+            await leveling.handle_message(message, client)
+        except Exception:
+            log.exception("Leveling error on message %s", message.id)
 
     if message.guild and not message.author.bot and INVITE_RE.search(message.content):
         log.info("Invite link detected from %s in #%s", message.author, message.channel)

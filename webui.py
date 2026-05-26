@@ -3,6 +3,7 @@
 import json
 import os
 import secrets as _secrets_mod
+import sqlite3
 from functools import wraps
 from pathlib import Path
 
@@ -60,6 +61,49 @@ def read_file(path: Path) -> str:
 def write_file(path: Path, content: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, "utf-8")
+
+def _db_connect():
+    db_path = ROOT / "data" / "messages.db"
+    return sqlite3.connect(db_path) if db_path.exists() else None
+
+def read_level_rewards() -> list[dict]:
+    conn = _db_connect()
+    if not conn:
+        return []
+    try:
+        cur = conn.execute("SELECT guild_id, level, role_id FROM level_rewards ORDER BY level")
+        return [{"guild_id": r[0], "level": r[1], "role_id": r[2]} for r in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+def add_level_reward(guild_id: int, level: int, role_id: int):
+    conn = _db_connect()
+    if not conn:
+        raise RuntimeError("Database not found — has the bot started yet?")
+    try:
+        conn.execute(
+            "INSERT INTO level_rewards (guild_id, level, role_id) VALUES (?, ?, ?)"
+            " ON CONFLICT(guild_id, level) DO UPDATE SET role_id = ?",
+            (guild_id, level, role_id, role_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def remove_level_reward(guild_id: int, level: int):
+    conn = _db_connect()
+    if not conn:
+        raise RuntimeError("Database not found")
+    try:
+        conn.execute(
+            "DELETE FROM level_rewards WHERE guild_id = ? AND level = ?",
+            (guild_id, level),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 def read_blocked() -> list:
     p = SOCIAL_PATH / "blocked_users.json"
@@ -150,12 +194,14 @@ h1 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
 }
 .field input[type=text],
 .field input[type=password],
+.field select,
 .field textarea {
   width: 100%; background: var(--input-bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 8px 12px; color: var(--text);
   font-size: .875rem; font-family: inherit; transition: border-color .15s;
 }
-.field input:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
+.field select { appearance: none; cursor: pointer; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--accent); }
 .field .hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
 .field textarea {
   resize: vertical; font-family: "SF Mono", Consolas, "Courier New", monospace;
@@ -216,6 +262,7 @@ _NAV = [
     ("secrets",   "Secrets (.env)"),
     ("channels",  "Log Channels"),
     ("purgatory", "Purgatory"),
+    ("leveling",  "Leveling"),
     ("blocked",   "Blocked Users"),
     ("messages",  "Social Messages"),
     ("reactions", "Reaction Roles"),
@@ -238,6 +285,9 @@ def _render(active: str, body: str) -> str:
         f'<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">'
         f'<title>Lucebot Admin</title><style>{CSS}</style></head><body>'
         f'<div class="topbar"><div class="logo">Luce<span>bot</span> Admin</div>'
+        f'<form method="POST" action="/restart" style="margin-left:auto;margin-right:12px">'
+        f'<button type="submit" class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--muted)">&#x21BA; Restart Bot</button>'
+        f'</form>'
         f'<a class="logout" href="/logout">Log out</a></div>'
         f'<div class="layout"><nav class="sidebar">{nav_html}</nav>'
         f'<main class="main">{flash_html}{body}</main></div></body></html>'
@@ -555,6 +605,276 @@ def reactions():
         f'&nbsp; <code>/reaction-role-remove</code></div>'
     )
     return _render("reactions", body)
+
+# ── restart ───────────────────────────────────────────────────────────────────
+RESTART_FLAG = ROOT / "data" / ".bot_restart"
+
+@app.route("/restart", methods=["POST"])
+@login_required
+def restart():
+    try:
+        RESTART_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        RESTART_FLAG.touch()
+        flash("Restart signal sent — the bot will reconnect in a few seconds.", "success")
+    except Exception as exc:
+        flash(f"Failed to send restart signal: {exc}", "error")
+    return redirect(request.referrer or url_for("secrets"))
+
+
+# ── leveling ──────────────────────────────────────────────────────────────────
+@app.route("/leveling", methods=["GET", "POST"])
+@login_required
+def leveling():
+    if request.method == "POST":
+        action = request.form.get("action", "settings")
+        cfg = read_config()
+
+        if action == "settings":
+            cfg["leveling_enabled"] = request.form.get("leveling_enabled") == "true"
+            cfg["leveling_stack_rewards"] = request.form.get("leveling_stack_rewards") == "true"
+
+            for key in ("leveling_xp_min", "leveling_xp_max"):
+                val = request.form.get(key, "").strip()
+                if val.isdigit():
+                    cfg[key] = int(val)
+
+            mode = request.form.get("leveling_notify_mode", "current")
+            if mode in ("current", "dm", "channel", "off"):
+                cfg["leveling_notify_mode"] = mode
+
+            ch_val = request.form.get("leveling_notify_channel_id", "").strip()
+            if ch_val.isdigit():
+                cfg["leveling_notify_channel_id"] = int(ch_val)
+            elif not ch_val:
+                cfg.pop("leveling_notify_channel_id", None)
+
+            save_config(cfg)
+            flash("Leveling settings saved.", "success")
+
+        elif action == "add_ignored_channel":
+            val = request.form.get("channel_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_channels", [])
+                if int(val) not in ignored:
+                    ignored.append(int(val))
+                    cfg["leveling_ignored_channels"] = ignored
+                    save_config(cfg)
+                    flash(f"Channel {val} added to ignore list.", "success")
+                else:
+                    flash(f"Channel {val} is already ignored.", "info")
+            else:
+                flash("Enter a valid channel ID.", "error")
+
+        elif action == "remove_ignored_channel":
+            val = request.form.get("channel_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_channels", [])
+                if int(val) in ignored:
+                    ignored.remove(int(val))
+                    cfg["leveling_ignored_channels"] = ignored
+                    save_config(cfg)
+                    flash(f"Channel {val} removed.", "success")
+
+        elif action == "add_ignored_role":
+            val = request.form.get("role_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_roles", [])
+                if int(val) not in ignored:
+                    ignored.append(int(val))
+                    cfg["leveling_ignored_roles"] = ignored
+                    save_config(cfg)
+                    flash(f"Role {val} added to ignore list.", "success")
+                else:
+                    flash(f"Role {val} is already ignored.", "info")
+            else:
+                flash("Enter a valid role ID.", "error")
+
+        elif action == "remove_ignored_role":
+            val = request.form.get("role_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_roles", [])
+                if int(val) in ignored:
+                    ignored.remove(int(val))
+                    cfg["leveling_ignored_roles"] = ignored
+                    save_config(cfg)
+                    flash(f"Role {val} removed.", "success")
+
+        elif action == "add_reward":
+            env = read_env()
+            guild_id_str = env.get("DISCORD_GUILD_ID", "").strip()
+            if not guild_id_str.isdigit():
+                flash("Guild ID is not set in Secrets — required to add level rewards.", "error")
+            else:
+                lvl = request.form.get("reward_level", "").strip()
+                role = request.form.get("reward_role_id", "").strip()
+                if lvl.isdigit() and role.isdigit() and int(lvl) >= 1:
+                    try:
+                        add_level_reward(int(guild_id_str), int(lvl), int(role))
+                        flash(f"Reward added: Level {lvl} → Role {role}.", "success")
+                    except Exception as e:
+                        flash(f"Failed to add reward: {e}", "error")
+                else:
+                    flash("Enter a valid level (≥ 1) and role ID.", "error")
+
+        elif action == "remove_reward":
+            env = read_env()
+            guild_id_str = env.get("DISCORD_GUILD_ID", "").strip()
+            lvl = request.form.get("reward_level", "").strip()
+            if guild_id_str.isdigit() and lvl.isdigit():
+                try:
+                    remove_level_reward(int(guild_id_str), int(lvl))
+                    flash(f"Reward for Level {lvl} removed.", "success")
+                except Exception as e:
+                    flash(f"Failed to remove reward: {e}", "error")
+
+        return redirect(url_for("leveling"))
+
+    cfg = read_config()
+
+    enabled      = cfg.get("leveling_enabled", True)
+    xp_min       = cfg.get("leveling_xp_min", 15)
+    xp_max       = cfg.get("leveling_xp_max", 25)
+    stack        = cfg.get("leveling_stack_rewards", True)
+    notify_mode  = cfg.get("leveling_notify_mode", "current")
+    notify_ch_id = cfg.get("leveling_notify_channel_id", "")
+    ign_channels = cfg.get("leveling_ignored_channels", [])
+    ign_roles    = cfg.get("leveling_ignored_roles", [])
+    rewards      = read_level_rewards()
+
+    def _sel(name, current, options):
+        opts = "".join(
+            f'<option value="{v}"{"selected" if str(v) == str(current) else ""}>{label}</option>'
+            for v, label in options
+        )
+        return f'<select name="{name}">{opts}</select>'
+
+    # ── XP Settings card ──────────────────────────────────────────────────────
+    settings_card = (
+        '<div class="card"><h2>XP Settings</h2>'
+        '<form method="POST"><input type="hidden" name="action" value="settings">'
+        '<div class="field"><label>Leveling Enabled</label>'
+        + _sel("leveling_enabled", str(enabled).lower(), [("true", "Enabled"), ("false", "Disabled")])
+        + '</div>'
+        '<div class="row">'
+        '<div class="field"><label>XP Min (per message)</label>'
+        f'<input type="text" name="leveling_xp_min" value="{xp_min}">'
+        '</div>'
+        '<div class="field"><label>XP Max (per message)</label>'
+        f'<input type="text" name="leveling_xp_max" value="{xp_max}">'
+        '</div></div>'
+        '<div class="field"><label>Stack Role Rewards</label>'
+        + _sel("leveling_stack_rewards", str(stack).lower(), [
+            ("true",  "Stack — keep all earned rewards"),
+            ("false", "Replace — only the highest reward"),
+        ])
+        + '<div class="hint">Stack: members keep every role they unlock. '
+        'Replace: only the role for their current highest level is kept.</div></div>'
+        '<div class="field"><label>Level-Up Notification</label>'
+        + _sel("leveling_notify_mode", notify_mode, [
+            ("current", "Current channel (where the message was sent)"),
+            ("dm",      "DM the user"),
+            ("channel", "Specific channel"),
+            ("off",     "Off — no notifications"),
+        ])
+        + '</div>'
+        '<div class="field"><label>Notification Channel ID</label>'
+        f'<input type="text" name="leveling_notify_channel_id" value="{notify_ch_id}" placeholder="Only used when mode is \'Specific channel\'">'
+        '</div>'
+        '<button type="submit" class="btn btn-primary">Save settings</button>'
+        '</form></div>'
+    )
+
+    # ── Level Rewards card ────────────────────────────────────────────────────
+    reward_rows = ""
+    for r in rewards:
+        reward_rows += (
+            f'<tr><td><strong>{r["level"]}</strong></td>'
+            f'<td><code>{r["role_id"]}</code></td>'
+            f'<td><form method="POST" style="display:inline">'
+            f'<input type="hidden" name="action" value="remove_reward">'
+            f'<input type="hidden" name="reward_level" value="{r["level"]}">'
+            f'<button type="submit" class="btn btn-danger btn-sm">Remove</button>'
+            f'</form></td></tr>'
+        )
+    if not reward_rows:
+        reward_rows = '<tr><td colspan="3" class="empty">No level rewards configured</td></tr>'
+
+    rewards_card = (
+        '<div class="card"><h2>Level Rewards</h2>'
+        '<form method="POST"><input type="hidden" name="action" value="add_reward">'
+        '<div class="row">'
+        '<div class="field"><label>Level</label>'
+        '<input type="text" name="reward_level" placeholder="e.g. 5"></div>'
+        '<div class="field"><label>Role ID</label>'
+        '<input type="text" name="reward_role_id" placeholder="e.g. 123456789012345678"></div>'
+        '<button type="submit" class="btn btn-primary" style="flex-shrink:0">Add reward</button>'
+        '</div></form>'
+        '<div class="hint" style="margin-bottom:14px">Guild ID must be set in Secrets for add/remove to work.</div>'
+        '<table><thead><tr><th>Level</th><th>Role ID</th><th style="width:100px">Action</th></tr></thead>'
+        f'<tbody>{reward_rows}</tbody></table></div>'
+    )
+
+    # ── Ignored Channels card ─────────────────────────────────────────────────
+    ign_ch_rows = ""
+    for ch_id in ign_channels:
+        ign_ch_rows += (
+            f'<tr><td><code>{ch_id}</code></td><td>'
+            f'<form method="POST" style="display:inline">'
+            f'<input type="hidden" name="action" value="remove_ignored_channel">'
+            f'<input type="hidden" name="channel_id" value="{ch_id}">'
+            f'<button type="submit" class="btn btn-danger btn-sm">Remove</button>'
+            f'</form></td></tr>'
+        )
+    if not ign_ch_rows:
+        ign_ch_rows = '<tr><td colspan="2" class="empty">No channels ignored</td></tr>'
+
+    ignored_ch_card = (
+        '<div class="card"><h2>Ignored Channels</h2>'
+        '<p class="hint" style="margin-bottom:14px">Messages in these channels earn no XP.</p>'
+        '<form method="POST"><input type="hidden" name="action" value="add_ignored_channel">'
+        '<div class="row">'
+        '<div class="field"><label>Channel ID</label>'
+        '<input type="text" name="channel_id" placeholder="e.g. 123456789012345678"></div>'
+        '<button type="submit" class="btn btn-primary" style="flex-shrink:0">Ignore channel</button>'
+        '</div></form><br>'
+        '<table><thead><tr><th>Channel ID</th><th style="width:100px">Action</th></tr></thead>'
+        f'<tbody>{ign_ch_rows}</tbody></table></div>'
+    )
+
+    # ── Ignored Roles card ────────────────────────────────────────────────────
+    ign_role_rows = ""
+    for role_id in ign_roles:
+        ign_role_rows += (
+            f'<tr><td><code>{role_id}</code></td><td>'
+            f'<form method="POST" style="display:inline">'
+            f'<input type="hidden" name="action" value="remove_ignored_role">'
+            f'<input type="hidden" name="role_id" value="{role_id}">'
+            f'<button type="submit" class="btn btn-danger btn-sm">Remove</button>'
+            f'</form></td></tr>'
+        )
+    if not ign_role_rows:
+        ign_role_rows = '<tr><td colspan="2" class="empty">No roles ignored</td></tr>'
+
+    ignored_role_card = (
+        '<div class="card"><h2>Ignored Roles</h2>'
+        '<p class="hint" style="margin-bottom:14px">Members with any of these roles earn no XP.</p>'
+        '<form method="POST"><input type="hidden" name="action" value="add_ignored_role">'
+        '<div class="row">'
+        '<div class="field"><label>Role ID</label>'
+        '<input type="text" name="role_id" placeholder="e.g. 123456789012345678"></div>'
+        '<button type="submit" class="btn btn-primary" style="flex-shrink:0">Ignore role</button>'
+        '</div></form><br>'
+        '<table><thead><tr><th>Role ID</th><th style="width:100px">Action</th></tr></thead>'
+        f'<tbody>{ign_role_rows}</tbody></table></div>'
+    )
+
+    body = (
+        '<h1>Leveling</h1>'
+        '<p class="subtitle">XP, level-up notifications, role rewards, and channel/role exceptions</p>'
+        + settings_card + rewards_card + ignored_ch_card + ignored_role_card
+    )
+    return _render("leveling", body)
+
 
 # ── entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
