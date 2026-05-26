@@ -266,6 +266,7 @@ _NAV = [
     ("blocked",   "Blocked Users"),
     ("messages",  "Social Messages"),
     ("reactions", "Reaction Roles"),
+    ("logs",      "Bot Logs"),
 ]
 
 def _render(active: str, body: str) -> str:
@@ -874,6 +875,68 @@ def leveling():
         + settings_card + rewards_card + ignored_ch_card + ignored_role_card
     )
     return _render("leveling", body)
+
+
+# ── bot logs ──────────────────────────────────────────────────────────────────
+LOG_PATH = ROOT / "data" / "bot.log"
+LOG_TAIL  = 300
+
+@app.route("/logs/data")
+@login_required
+def logs_data():
+    if not LOG_PATH.exists():
+        return "No log file yet — has the bot started?", 200, {"Content-Type": "text/plain; charset=utf-8"}
+    lines = LOG_PATH.read_text("utf-8", errors="replace").splitlines()
+    return "\n".join(lines[-LOG_TAIL:]), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route("/logs")
+@login_required
+def logs():
+    body = (
+        '<h1>Bot Logs</h1>'
+        f'<p class="subtitle">Live tail of <code>data/bot.log</code> — last {LOG_TAIL} lines, refreshes every 5 s</p>'
+        '<div class="card" style="padding:0;overflow:hidden">'
+        '  <div style="display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:.8rem">'
+        '    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--muted)">'
+        '      <input type="checkbox" id="autoRefresh" checked> Auto-refresh (5 s)'
+        '    </label>'
+        '    <button onclick="refresh()" class="btn btn-sm" style="background:var(--card);border:1px solid var(--border);color:var(--muted)">↺ Refresh now</button>'
+        '    <span id="status" style="color:var(--muted)"></span>'
+        '  </div>'
+        '  <pre id="logContent" style="margin:0;padding:16px;overflow:auto;max-height:72vh;'
+        'font-size:.78rem;line-height:1.6;background:var(--bg);border-radius:0"></pre>'
+        '</div>'
+        '<script>'
+        'function colorize(text){'
+        '  return text.split("\\n").map(line=>{'
+        '    let s="color:#8b949e";'
+        '    if(/\\bERROR\\b/.test(line))s="color:#f85149";'
+        '    else if(/\\bWARNING\\b/.test(line))s="color:#e3b341";'
+        '    else if(/\\bINFO\\b/.test(line))s="color:#e6edf3";'
+        '    const e=line.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");'
+        '    return `<span style="${s}">${e}</span>`;'
+        '  }).join("\\n");'
+        '}'
+        'async function refresh(){'
+        '  const pre=document.getElementById("logContent");'
+        '  const atBottom=pre.scrollHeight-pre.clientHeight<=pre.scrollTop+60;'
+        '  try{'
+        '    const r=await fetch("/logs/data");'
+        '    const t=await r.text();'
+        '    pre.innerHTML=colorize(t);'
+        '    document.getElementById("status").textContent="Updated "+new Date().toLocaleTimeString();'
+        '    if(atBottom)pre.scrollTop=pre.scrollHeight;'
+        '  }catch(e){document.getElementById("status").textContent="Fetch error";}'
+        '}'
+        'refresh();'
+        'let iv=setInterval(refresh,5000);'
+        'document.getElementById("autoRefresh").addEventListener("change",function(){'
+        '  if(this.checked)iv=setInterval(refresh,5000); else clearInterval(iv);'
+        '});'
+        '</script>'
+    )
+    return _render("logs", body)
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

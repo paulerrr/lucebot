@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import io
 import logging
+import logging.handlers
 import os
 import re
 import time
@@ -16,6 +17,13 @@ from social_interactions import SocialInteractions
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("lucebot")
+
+os.makedirs("data", exist_ok=True)
+_fh = logging.handlers.RotatingFileHandler(
+    "data/bot.log", maxBytes=2_000_000, backupCount=2, encoding="utf-8"
+)
+_fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
+logging.getLogger().addHandler(_fh)
 
 
 def _wait_for_token() -> str:
