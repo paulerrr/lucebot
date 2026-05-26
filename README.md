@@ -7,6 +7,7 @@ A Discord moderation bot for Roman Catholic servers.
 - **Purgatory verification** — new members are held in a restricted channel until a mod verifies them
 - **Moderation logging** — configurable per-category log channels for messages, members, and joins/leaves
 - **Reaction roles** — emoji-to-role mapping via slash commands
+- **Web admin UI** — manage all configuration and secrets from a browser
 - `!compliment [@member]` — sends a random compliment to the mentioned member (or yourself if omitted)
 - `!insult [@member]` — sends a random playful insult to the mentioned member (or yourself if omitted)
 
@@ -20,6 +21,7 @@ A Discord moderation bot for Roman Catholic servers.
    DISCORD_PURGATORY_CHANNEL_ID=your-channel-id  # optional if using /purgatory-setup
    DISCORD_PURGATORY_ROLE_ID=your-role-id        # optional if using /purgatory-setup
    DISCORD_LOG_CHANNEL_ID=your-channel-id        # optional if using /set-log-channel
+   WEBUI_PASSWORD=admin                           # change this
    ```
 
 2. Run with Docker Compose:
@@ -28,12 +30,36 @@ A Discord moderation bot for Roman Catholic servers.
    docker compose up -d --build
    ```
 
+   This starts both the bot and the web UI. The admin panel is available at `http://localhost:8765`.
+
 ### Running without Docker
 
 ```bash
 pip install -r requirements.txt
+
+# Start the bot
 python bot.py
+
+# Start the admin UI (separate terminal)
+python webui.py
 ```
+
+## Admin Web UI
+
+The web UI runs on port `8765` (override with `WEBUI_PORT` in `.env`) and lets you manage everything without editing files by hand.
+
+| Section | What you can manage |
+|---|---|
+| **Secrets** | Discord token, Guild ID, channel/role ID overrides, web UI password |
+| **Log Channels** | Join/leave, message, and member log channel IDs |
+| **Purgatory** | Purgatory channel and role IDs |
+| **Blocked Users** | Add/remove users blocked from `!compliment` and `!insult` |
+| **Social Messages** | Edit the compliment and insult message pools |
+| **Reaction Roles** | Read-only view of configured reaction role messages |
+
+The default password is `admin` — change it immediately under **Secrets → Web UI Password**.
+
+> **Note:** Changes to secrets (`.env`) and most config values require a bot restart to take effect. Social messages can be reloaded without a restart using `!reload_messages` in Discord.
 
 ## Purgatory Verification
 
@@ -58,19 +84,7 @@ Run `/purgatory-setup` in your server (requires **Manage Server** permission):
 /purgatory-setup role:@Purgatory channel:#purgatory
 ```
 
-Config is saved to `config.json` and persists across restarts. You can also set IDs directly in `.env`:
-
-```
-DISCORD_PURGATORY_CHANNEL_ID=your-channel-id-here
-DISCORD_PURGATORY_ROLE_ID=your-role-id-here
-```
-
-> **Docker note:** mount both persistent files as volumes to preserve config and message history across container rebuilds:
-> ```yaml
-> volumes:
->   - ./config.json:/app/config.json
->   - ./data:/app/data
-> ```
+Config is saved to `config.json` and persists across restarts. You can also set IDs in `.env` or via the web UI.
 
 ## Moderation Logging
 
@@ -82,7 +96,7 @@ Log events are split into three categories, each with its own configurable chann
 | **message** | Message deleted, message edited, bulk purge, invite links posted |
 | **member** | Role added/removed, nickname changed, username changed, timed out, timeout removed, banned, unbanned |
 
-Set channels with `/set-log-channel` (requires **Manage Server**):
+Set channels with `/set-log-channel` (requires **Manage Server**) or via the web UI:
 
 ```
 /set-log-channel log_type:join/leave    channel:#join-log
@@ -91,12 +105,6 @@ Set channels with `/set-log-channel` (requires **Manage Server**):
 ```
 
 To route everything to one channel, only set the `join/leave` channel — the others will fall back to it.
-
-You can also pre-set the join/leave channel via env var:
-
-```
-DISCORD_LOG_CHANNEL_ID=your-channel-id-here
-```
 
 Message content is persisted to `data/messages.db` (SQLite) as messages arrive, so delete and edit logs work even for messages that have scrolled out of Discord's memory cache. The only messages that can't be recovered are those sent before the bot was first deployed.
 
@@ -122,7 +130,7 @@ Message content is persisted to `data/messages.db` (SQLite) as messages arrive, 
 | `!listblockedusers` | Show all currently blocked members |
 | `!reload_messages` | Hot-reload compliment/insult files without restarting |
 
-Message lists are stored in `data/social_interactions/compliments.md` and `data/social_interactions/insults.md`. Blocked users are persisted in `data/social_interactions/blocked_users.json`.
+Message lists are stored in `data/social_interactions/compliments.md` and `data/social_interactions/insults.md` and can be edited from the web UI. Blocked users are persisted in `data/social_interactions/blocked_users.json`.
 
 ## Discord Bot Permissions
 

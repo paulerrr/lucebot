@@ -4,5 +4,18 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
+      - ./.env:/app/.env
+      - ./config.json:/app/config.json
+      - ./data:/app/data
+
+  webui:
+    build: .
+    command: python webui.py
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./.env:/app/.env
       - ./config.json:/app/config.json
       - ./data:/app/data
