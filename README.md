@@ -18,8 +18,6 @@ A Discord moderation bot for Roman Catholic servers.
    ```
    DISCORD_TOKEN=your-bot-token-here
    DISCORD_GUILD_ID=your-guild-id-here          # optional, speeds up slash command sync
-   DISCORD_PURGATORY_CHANNEL_ID=your-channel-id  # optional if using /purgatory-setup
-   DISCORD_PURGATORY_ROLE_ID=your-role-id        # optional if using /purgatory-setup
    WEBUI_PASSWORD=admin                           # change this
    ```
 
@@ -83,7 +81,7 @@ Run `/purgatory-setup` in your server (requires **Manage Server** permission):
 /purgatory-setup role:@Purgatory channel:#purgatory
 ```
 
-Config is saved to `config.json` and persists across restarts. You can also set IDs in `.env` or via the web UI.
+Config is saved to `config.json` and persists across restarts. You can also manage IDs via the web UI's Purgatory tab.
 
 ## Moderation Logging
 

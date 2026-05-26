@@ -338,10 +338,6 @@ _ENV_FIELDS = [
      "Required. From the Discord Developer Portal."),
     ("DISCORD_GUILD_ID",             "Guild ID",                  "text",
      "Optional. Speeds up slash command sync to this specific server."),
-    ("DISCORD_PURGATORY_CHANNEL_ID", "Purgatory Channel ID",      "text",
-     "Optional env override. Prefer <code>/purgatory-setup</code> in Discord."),
-    ("DISCORD_PURGATORY_ROLE_ID",    "Purgatory Role ID",         "text",
-     "Optional env override. Prefer <code>/purgatory-setup</code> in Discord."),
     ("WEBUI_PASSWORD",               "Web UI Password",           "password",
      "Password for this admin panel. Default: <code>admin</code>"),
 ]

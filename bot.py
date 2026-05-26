@@ -41,10 +41,6 @@ cfg.load()
 
 _guild_id_env = os.getenv("DISCORD_GUILD_ID")
 GUILD_ID = int(_guild_id_env) if _guild_id_env else None
-_purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
-PURGATORY_CHANNEL_ID = int(_purgatory_channel_env) if _purgatory_channel_env else None
-_purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
-PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
 
 social = SocialInteractions()
 
@@ -180,7 +176,7 @@ async def purgatory_setup_command(
 @discord.app_commands.describe(member="The member to verify")
 @discord.app_commands.default_permissions(manage_roles=True)
 async def verify_command(interaction: discord.Interaction, member: discord.Member):
-    purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+    purgatory_role_id = cfg.get("purgatory_role_id")
     if not purgatory_role_id:
         await interaction.response.send_message("Purgatory role not configured. Run /purgatory-setup first.", ephemeral=True)
         return
@@ -449,8 +445,8 @@ async def on_ready():
 
 @client.event
 async def on_member_join(member):
-    purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
-    purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+    purgatory_channel_id = cfg.get("purgatory_channel_id")
+    purgatory_role_id = cfg.get("purgatory_role_id")
     if purgatory_channel_id and purgatory_role_id:
         guild = member.guild
         role = guild.get_role(purgatory_role_id)
@@ -792,7 +788,7 @@ async def on_message(message):
             await message.channel.send("Usage: `!verify @member`")
             return
         member = message.mentions[0]
-        purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
+        purgatory_role_id = cfg.get("purgatory_role_id")
         if not purgatory_role_id:
             await message.channel.send("Purgatory role not configured.")
             return
