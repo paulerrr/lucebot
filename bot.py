@@ -45,8 +45,6 @@ _purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
 PURGATORY_CHANNEL_ID = int(_purgatory_channel_env) if _purgatory_channel_env else None
 _purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
 PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
-_log_channel_env = os.getenv("DISCORD_LOG_CHANNEL_ID")
-LOG_CHANNEL_ID = int(_log_channel_env) if _log_channel_env else None
 
 social = SocialInteractions()
 
@@ -59,7 +57,6 @@ leveling.setup(tree, client)
 
 INVITE_RE = re.compile(r"discord(?:\.gg|(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
 
-# Maps log_type → config key. "join" reuses the existing key for backwards compat.
 _LOG_TYPE_KEYS = {
     "join": "log_channel_id",
     "message": "message_log_channel_id",
@@ -67,19 +64,12 @@ _LOG_TYPE_KEYS = {
 }
 
 
-def _get_log_channel(log_type: str = None):
-    """Return the log channel for log_type, falling back to the join/generic channel."""
-    if log_type:
-        key = _LOG_TYPE_KEYS.get(log_type)
-        if key:
-            channel_id = cfg.get(key)
-            if channel_id:
-                ch = client.get_channel(channel_id)
-                if ch:
-                    return ch
-    fallback_id = LOG_CHANNEL_ID or cfg.get("log_channel_id")
-    if fallback_id:
-        return client.get_channel(fallback_id)
+def _get_log_channel(log_type: str):
+    key = _LOG_TYPE_KEYS.get(log_type)
+    if key:
+        channel_id = cfg.get(key)
+        if channel_id:
+            return client.get_channel(channel_id)
     return None
 
 
@@ -108,8 +98,7 @@ async def set_log_channel_command(
         "member": "Member events (roles/nicknames/bans/timeouts)",
     }
     await interaction.response.send_message(
-        f"{labels[log_type]} will now be logged in {channel.mention}.\n"
-        f"*Any log type without a dedicated channel falls back to the join/leave channel.*",
+        f"{labels[log_type]} will now be logged in {channel.mention}.",
         ephemeral=True,
     )
     log.info("Log channel for '%s' set to %s by %s", log_type, channel.id, interaction.user)

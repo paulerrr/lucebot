@@ -20,7 +20,6 @@ A Discord moderation bot for Roman Catholic servers.
    DISCORD_GUILD_ID=your-guild-id-here          # optional, speeds up slash command sync
    DISCORD_PURGATORY_CHANNEL_ID=your-channel-id  # optional if using /purgatory-setup
    DISCORD_PURGATORY_ROLE_ID=your-role-id        # optional if using /purgatory-setup
-   DISCORD_LOG_CHANNEL_ID=your-channel-id        # optional if using /set-log-channel
    WEBUI_PASSWORD=admin                           # change this
    ```
 
@@ -88,7 +87,7 @@ Config is saved to `config.json` and persists across restarts. You can also set 
 
 ## Moderation Logging
 
-Log events are split into three categories, each with its own configurable channel. Any category without a dedicated channel falls back to the join/leave channel.
+Log events are split into three categories, each with its own configurable channel.
 
 | Category | Events logged |
 |---|---|

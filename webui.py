@@ -342,8 +342,6 @@ _ENV_FIELDS = [
      "Optional env override. Prefer <code>/purgatory-setup</code> in Discord."),
     ("DISCORD_PURGATORY_ROLE_ID",    "Purgatory Role ID",         "text",
      "Optional env override. Prefer <code>/purgatory-setup</code> in Discord."),
-    ("DISCORD_LOG_CHANNEL_ID",       "Log Channel ID (fallback)", "text",
-     "Optional. Used when no type-specific log channel is configured."),
     ("WEBUI_PASSWORD",               "Web UI Password",           "password",
      "Password for this admin panel. Default: <code>admin</code>"),
 ]
@@ -424,10 +422,9 @@ def channels():
     body = (
         f'<h1>Log Channels</h1>'
         f'<p class="subtitle">Configure which channels receive each category of log events</p>'
-        f'<div class="notice">Any category without a dedicated channel falls back to the Join/Leave channel.</div>'
         f'<form method="POST"><div class="card"><h2>Channel IDs</h2>'
         + _ch("log_channel_id",         "Join / Leave Channel",
-              "Member joined and member left events. Also the fallback for other log types.")
+              "Member joined and member left events.")
         + _ch("message_log_channel_id", "Message Channel",
               "Message deleted, edited, bulk purge, and invite links posted.")
         + _ch("member_log_channel_id",  "Member Channel",
