@@ -6,25 +6,13 @@ import secrets as _secrets_mod
 from functools import wraps
 from pathlib import Path
 
-from dotenv import dotenv_values, set_key
+from dotenv import dotenv_values
 from flask import Flask, flash, get_flashed_messages, redirect, request, session, url_for
 
 ROOT        = Path(__file__).parent
 ENV_PATH    = ROOT / ".env"
 CONFIG_PATH = ROOT / "config.json"
 SOCIAL_PATH = ROOT / "data" / "social_interactions"
-
-# ── app setup ─────────────────────────────────────────────────────────────────
-app = Flask(__name__)
-
-# Generate a stable session secret on first run and persist it in .env
-_env0 = dotenv_values(ENV_PATH) if ENV_PATH.exists() else {}
-_sk   = _env0.get("WEBUI_SECRET_KEY") or _secrets_mod.token_hex(32)
-if not _env0.get("WEBUI_SECRET_KEY"):
-    if not ENV_PATH.exists():
-        ENV_PATH.touch()
-    set_key(str(ENV_PATH), "WEBUI_SECRET_KEY", _sk)
-app.secret_key = _sk
 
 # ── data helpers ──────────────────────────────────────────────────────────────
 def read_env() -> dict:
@@ -33,9 +21,6 @@ def read_env() -> dict:
 def write_env(key: str, value: str):
     if not ENV_PATH.exists():
         ENV_PATH.touch()
-    # Read current contents, update the key, write back as a plain string.
-    # set_key can fail on Docker bind mounts (atomic rename not allowed), so
-    # we do a manual rewrite instead.
     lines = ENV_PATH.read_text("utf-8").splitlines(keepends=True)
     new_line = f'{key}={value}\n'
     replaced = False
@@ -47,6 +32,16 @@ def write_env(key: str, value: str):
     if not replaced:
         lines.append(new_line)
     ENV_PATH.write_text("".join(lines), "utf-8")
+
+# ── app setup ─────────────────────────────────────────────────────────────────
+app = Flask(__name__)
+
+# Generate a stable session secret on first run and persist it in .env
+_env0 = read_env()
+_sk   = _env0.get("WEBUI_SECRET_KEY") or _secrets_mod.token_hex(32)
+if not _env0.get("WEBUI_SECRET_KEY"):
+    write_env("WEBUI_SECRET_KEY", _sk)
+app.secret_key = _sk
 
 def read_config() -> dict:
     if not CONFIG_PATH.exists():

@@ -7,7 +7,7 @@ _data = {}
 
 def load():
     global _data
-    if os.path.exists(_PATH):
+    if os.path.isfile(_PATH):
         with open(_PATH) as f:
             _data = json.load(f)
 
@@ -18,6 +18,8 @@ def get(key, default=None):
 
 def set(key, value):
     _data[key] = value
+    if os.path.isdir(_PATH):
+        raise RuntimeError(f"{_PATH} is a directory — remove it and create an empty config.json file")
     with open(_PATH, "w") as f:
         json.dump(_data, f, indent=2)
 

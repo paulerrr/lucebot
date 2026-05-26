@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import re
+import time
 
 import discord
 from dotenv import load_dotenv
@@ -11,10 +12,23 @@ import config as cfg
 import message_store
 from social_interactions import SocialInteractions
 
-load_dotenv()
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("lucebot")
+
+
+def _wait_for_token() -> str:
+    while True:
+        load_dotenv(override=True)
+        token = os.getenv("DISCORD_TOKEN")
+        if token:
+            return token
+        log.info("DISCORD_TOKEN not set — configure it via the web UI and save, then the bot will connect automatically")
+        time.sleep(5)
+
+
+TOKEN = _wait_for_token()
 cfg.load()
 
-TOKEN = os.getenv("DISCORD_TOKEN")
 _guild_id_env = os.getenv("DISCORD_GUILD_ID")
 GUILD_ID = int(_guild_id_env) if _guild_id_env else None
 _purgatory_channel_env = os.getenv("DISCORD_PURGATORY_CHANNEL_ID")
@@ -23,12 +37,6 @@ _purgatory_role_env = os.getenv("DISCORD_PURGATORY_ROLE_ID")
 PURGATORY_ROLE_ID = int(_purgatory_role_env) if _purgatory_role_env else None
 _log_channel_env = os.getenv("DISCORD_LOG_CHANNEL_ID")
 LOG_CHANNEL_ID = int(_log_channel_env) if _log_channel_env else None
-
-if not TOKEN:
-    raise RuntimeError("DISCORD_TOKEN not set in .env")
-
-logging.basicConfig(level=logging.INFO)
-log = logging.getLogger("lucebot")
 
 social = SocialInteractions()
 
@@ -732,10 +740,16 @@ async def on_message(message):
         return
 
     if message.guild and not message.author.bot:
-        await message_store.store(message)
+        try:
+            await message_store.store(message)
+        except Exception:
+            log.exception("Failed to store message %s", message.id)
 
     if message.guild and not message.author.bot and INVITE_RE.search(message.content):
-        ch = _get_log_channel("message")
+        log.info("Invite link detected from %s in #%s", message.author, message.channel)
+        ch = _get_log_channel("member")
+        if not ch:
+            log.warning("Invite link detected but no member log channel configured")
         if ch:
             embed = discord.Embed(
                 title="Invite Link Posted",

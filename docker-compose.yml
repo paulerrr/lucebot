@@ -2,7 +2,9 @@ services:
   bot:
     build: .
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - ./.env:/app/.env
       - ./config.json:/app/config.json
@@ -12,7 +14,9 @@ services:
     build: .
     command: python webui.py
     restart: unless-stopped
-    env_file: .env
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "8765:8765"
     volumes:
