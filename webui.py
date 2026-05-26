@@ -700,6 +700,30 @@ def leveling():
                     save_config(cfg)
                     flash(f"Role {val} removed.", "success")
 
+        elif action == "add_ignored_user":
+            val = request.form.get("user_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_users", [])
+                if int(val) not in ignored:
+                    ignored.append(int(val))
+                    cfg["leveling_ignored_users"] = ignored
+                    save_config(cfg)
+                    flash(f"User {val} added to ignore list.", "success")
+                else:
+                    flash(f"User {val} is already ignored.", "info")
+            else:
+                flash("Enter a valid user ID.", "error")
+
+        elif action == "remove_ignored_user":
+            val = request.form.get("user_id", "").strip()
+            if val.isdigit():
+                ignored = cfg.get("leveling_ignored_users", [])
+                if int(val) in ignored:
+                    ignored.remove(int(val))
+                    cfg["leveling_ignored_users"] = ignored
+                    save_config(cfg)
+                    flash(f"User {val} removed.", "success")
+
         elif action == "add_reward":
             env = read_env()
             guild_id_str = env.get("DISCORD_GUILD_ID", "").strip()
@@ -869,10 +893,38 @@ def leveling():
         f'<tbody>{ign_role_rows}</tbody></table></div>'
     )
 
+    # ── Ignored Users card ────────────────────────────────────────────────────
+    ign_users = cfg.get("leveling_ignored_users", [])
+    ign_user_rows = ""
+    for uid in ign_users:
+        ign_user_rows += (
+            f'<tr><td><code>{uid}</code></td><td>'
+            f'<form method="POST" style="display:inline">'
+            f'<input type="hidden" name="action" value="remove_ignored_user">'
+            f'<input type="hidden" name="user_id" value="{uid}">'
+            f'<button type="submit" class="btn btn-danger btn-sm">Remove</button>'
+            f'</form></td></tr>'
+        )
+    if not ign_user_rows:
+        ign_user_rows = '<tr><td colspan="2" class="empty">No users ignored</td></tr>'
+
+    ignored_user_card = (
+        '<div class="card"><h2>Ignored Users</h2>'
+        '<p class="hint" style="margin-bottom:14px">These users earn no XP regardless of channel or role.</p>'
+        '<form method="POST"><input type="hidden" name="action" value="add_ignored_user">'
+        '<div class="row">'
+        '<div class="field"><label>User ID</label>'
+        '<input type="text" name="user_id" placeholder="e.g. 123456789012345678"></div>'
+        '<button type="submit" class="btn btn-primary" style="flex-shrink:0">Ignore user</button>'
+        '</div></form><br>'
+        '<table><thead><tr><th>User ID</th><th style="width:100px">Action</th></tr></thead>'
+        f'<tbody>{ign_user_rows}</tbody></table></div>'
+    )
+
     body = (
         '<h1>Leveling</h1>'
         '<p class="subtitle">XP, level-up notifications, role rewards, and channel/role exceptions</p>'
-        + settings_card + rewards_card + ignored_ch_card + ignored_role_card
+        + settings_card + rewards_card + ignored_ch_card + ignored_role_card + ignored_user_card
     )
     return _render("leveling", body)
 

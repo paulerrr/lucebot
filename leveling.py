@@ -216,6 +216,8 @@ async def handle_message(message: discord.Message, client: discord.Client):
         return
     if message.channel.id in cfg.get("leveling_ignored_channels", []):
         return
+    if message.author.id in cfg.get("leveling_ignored_users", []):
+        return
     member_role_ids = {r.id for r in message.author.roles}
     if member_role_ids & set(cfg.get("leveling_ignored_roles", [])):
         return
