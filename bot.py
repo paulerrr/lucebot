@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 import config as cfg
 import leveling
 import message_store
+import modwarnings as warn_mod
 from social_interactions import SocialInteractions
 
 logging.basicConfig(level=logging.INFO)
@@ -50,8 +51,10 @@ intents.members = True
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
 leveling.setup(tree, client)
+warn_mod.setup(tree, client)
 
 INVITE_RE = re.compile(r"discord(?:\.gg|(?:app)?\.com/invite)/[\w-]+", re.IGNORECASE)
+_RR_PAIR_RE = re.compile(r"(\S+)\s+<@&(\d+)>")
 
 _LOG_TYPE_KEYS = {
     "join": "log_channel_id",
@@ -406,6 +409,333 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     log.info("Reaction role message %s removed by %s", message_id, interaction.user)
 
 
+# ── social slash commands ──────────────────────────────────────────────────────
+
+@tree.command(name="compliment", description="Send a compliment to a member")
+@discord.app_commands.describe(member="Member to compliment (defaults to you)")
+async def compliment_command(interaction: discord.Interaction, member: discord.Member = None):
+    await social.handle_compliment_slash(interaction, member, client.user)
+
+
+@tree.command(name="insult", description="Send a playful insult to a member")
+@discord.app_commands.describe(member="Member to insult (defaults to you)")
+async def insult_command(interaction: discord.Interaction, member: discord.Member = None):
+    await social.handle_insult_slash(interaction, member, client.user)
+
+
+@tree.command(name="blockuser", description="Block a member from using compliment and insult commands")
+@discord.app_commands.describe(member="Member to block")
+@discord.app_commands.default_permissions(administrator=True)
+async def blockuser_command(interaction: discord.Interaction, member: discord.Member):
+    await social.handle_blockuser_slash(interaction, member)
+
+
+@tree.command(name="unblockuser", description="Unblock a member from using compliment and insult commands")
+@discord.app_commands.describe(member="Member to unblock")
+@discord.app_commands.default_permissions(administrator=True)
+async def unblockuser_command(interaction: discord.Interaction, member: discord.Member):
+    await social.handle_unblockuser_slash(interaction, member)
+
+
+@tree.command(name="listblockedusers", description="List all users blocked from social commands")
+@discord.app_commands.default_permissions(administrator=True)
+async def listblockedusers_command(interaction: discord.Interaction):
+    await social.handle_listblockedusers_slash(interaction, client)
+
+
+@tree.command(name="reload-messages", description="Hot-reload compliment and insult message lists")
+@discord.app_commands.default_permissions(administrator=True)
+async def reload_messages_command(interaction: discord.Interaction):
+    await social.handle_reload_slash(interaction)
+
+
+@tree.command(name="help", description="List all bot commands")
+@discord.app_commands.default_permissions(manage_messages=True)
+async def help_command(interaction: discord.Interaction):
+    await interaction.response.send_message(embed=_build_help_embed(), ephemeral=True)
+
+
+# ── prefix command handler (bot.py commands) ───────────────────────────────────
+
+
+def _build_help_embed() -> discord.Embed:
+    embed = discord.Embed(title="Bot Commands", color=discord.Color.blurple())
+    embed.add_field(
+        name="Moderation",
+        value=(
+            "`/warn` `!warn` @member [reason] — Warn a member\n"
+            "`/warnings` `!warnings` @member — View a member's warnings\n"
+            "`/warnings-clear` `!warnings-clear` @member — Clear all warnings\n"
+            "`/verify` `!verify` @member — Remove the Purgatory role"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Setup",
+        value=(
+            "`/purgatory-setup` `!purgatory-setup` [@role] [#channel] — Set up purgatory verification\n"
+            "`/set-log-channel` `!set-log-channel` <join|message|member> #channel — Set a log channel"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Reaction Roles",
+        value=(
+            "`/reaction-role-setup` `!reaction-role-setup` #channel Title emoji @role [...] — Create a reaction role message\n"
+            "`/reaction-role-add` `!reaction-role-add` <id> emoji @role [...] — Add pairs to an existing message\n"
+            "`/reaction-role-list` `!reaction-role-list` — List all reaction role messages\n"
+            "`/reaction-role-remove` `!reaction-role-remove` <id> — Delete a reaction role message"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Leveling",
+        value=(
+            "`/rank` `!rank` [@member] — Show rank card\n"
+            "`/leaderboard` `!leaderboard` — Show the XP leaderboard\n"
+            "`/level-config` `!level-config` [key value] — View or change leveling settings\n"
+            "`/level-notify` `!level-notify` <mode> [#channel] — Configure level-up notifications\n"
+            "`/level-reward-add` `!level-reward-add` <level> @role — Add a level role reward\n"
+            "`/level-reward-remove` `!level-reward-remove` <level> — Remove a level role reward\n"
+            "`/level-reward-list` `!level-reward-list` — List level role rewards\n"
+            "`/level-ignore-channel` `!level-ignore-channel` #channel — Stop granting XP in a channel\n"
+            "`/level-unignore-channel` `!level-unignore-channel` #channel — Resume granting XP in a channel\n"
+            "`/xp-set` `!xp-set` @member <amount> — Set a member's XP directly\n"
+            "`/xp-reset` `!xp-reset` @member — Reset a member's XP to zero"
+        ),
+        inline=False,
+    )
+    embed.add_field(
+        name="Social",
+        value=(
+            "`/compliment` `!compliment` [@member] — Send a compliment\n"
+            "`/insult` `!insult` [@member] — Send a playful insult\n"
+            "`/blockuser` `!blockuser` @member — Block from social commands *(Admin)*\n"
+            "`/unblockuser` `!unblockuser` @member — Unblock from social commands *(Admin)*\n"
+            "`/listblockedusers` `!listblockedusers` — List blocked users *(Admin)*\n"
+            "`/reload-messages` `!reload_messages` — Reload message lists *(Admin)*"
+        ),
+        inline=False,
+    )
+    embed.set_footer(text="All commands accept both / slash and ! prefix")
+    return embed
+
+async def _handle_prefix_commands(message: discord.Message):
+    content = message.content.strip()
+    ch = message.channel
+
+    if content == "!help":
+        if not message.author.guild_permissions.manage_messages:
+            await ch.send("You don't have permission to use this command.")
+            return
+        try:
+            await message.author.send(embed=_build_help_embed())
+            await ch.send("📬 Sent to your DMs!", delete_after=5)
+        except discord.Forbidden:
+            await ch.send(embed=_build_help_embed())
+
+    elif content.startswith("!set-log-channel"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if len(parts) < 3 or not message.channel_mentions:
+            await ch.send("Usage: `!set-log-channel <join|message|member> #channel`")
+            return
+        log_type = parts[1].lower()
+        if log_type not in _LOG_TYPE_KEYS:
+            await ch.send("Type must be one of: `join`, `message`, `member`")
+            return
+        target = message.channel_mentions[0]
+        cfg.set(_LOG_TYPE_KEYS[log_type], target.id)
+        labels = {
+            "join": "Join/leave events",
+            "message": "Message events (delete/edit/purge/invites)",
+            "member": "Member events (roles/nicknames/bans/timeouts)",
+        }
+        await ch.send(f"{labels[log_type]} will now be logged in {target.mention}.")
+        log.info("Log channel for '%s' set to %s by %s", log_type, target.id, message.author)
+
+    elif content.startswith("!purgatory-setup"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        guild = message.guild
+        role = message.role_mentions[0] if message.role_mentions else None
+        purg_ch = message.channel_mentions[0] if message.channel_mentions else None
+
+        if role is None:
+            role = discord.utils.get(guild.roles, name="Purgatory")
+            if role is None:
+                role = await guild.create_role(
+                    name="Purgatory",
+                    color=discord.Color.dark_grey(),
+                    reason="Purgatory verification setup",
+                )
+                role_status = f"Created new role {role.mention}"
+            else:
+                role_status = f"Found existing role {role.mention}"
+        else:
+            role_status = f"Using role {role.mention}"
+
+        if purg_ch is None:
+            purg_ch = discord.utils.get(guild.text_channels, name="purgatory")
+            if purg_ch is None:
+                purg_ch = await guild.create_text_channel(
+                    name="purgatory",
+                    reason="Purgatory verification setup",
+                )
+                channel_status = f"Created new channel {purg_ch.mention}"
+            else:
+                channel_status = f"Found existing channel {purg_ch.mention}"
+        else:
+            channel_status = f"Using channel {purg_ch.mention}"
+
+        await purg_ch.set_permissions(role, view_channel=True, send_messages=True, read_message_history=True)
+        denied = 0
+        for c in guild.channels:
+            if c.id == purg_ch.id or isinstance(c, discord.CategoryChannel):
+                continue
+            try:
+                await c.set_permissions(role, view_channel=False)
+                denied += 1
+            except discord.Forbidden:
+                log.warning("Could not set permissions on channel %s", c)
+
+        cfg.set("purgatory_channel_id", purg_ch.id)
+        cfg.set("purgatory_role_id", role.id)
+        await ch.send(
+            f"Purgatory setup complete!\n"
+            f"- {role_status}\n"
+            f"- {channel_status}\n"
+            f"- Denied access to {denied} other channel(s)\n\n"
+            f"New members will be assigned {role.mention} and directed to {purg_ch.mention} for verification."
+        )
+        log.info("Purgatory setup by %s: role=%s channel=%s denied=%d",
+                 message.author, role.id, purg_ch.id, denied)
+
+    elif content.startswith("!reaction-role-setup"):
+        if not message.author.guild_permissions.manage_roles:
+            await ch.send("You need Manage Roles permission.")
+            return
+        if not message.channel_mentions:
+            await ch.send("Usage: `!reaction-role-setup #channel Title emoji1 @role1 [emoji2 @role2 ...]`")
+            return
+        target = message.channel_mentions[0]
+        after = re.sub(r"!reaction-role-setup\s+", "", content, count=1)
+        after = re.sub(r"<#\d+>\s*", "", after, count=1).strip()
+        pairs = _RR_PAIR_RE.findall(after)
+        if not pairs:
+            await ch.send("No emoji→role pairs found. Usage: `!reaction-role-setup #channel Title emoji @role`")
+            return
+        first = _RR_PAIR_RE.search(after)
+        title = after[:first.start()].strip() or "Reaction Roles"
+        description = "\n".join(f"{e}  →  <@&{r}>" for e, r in pairs)
+        embed = discord.Embed(title=title, description=description, color=discord.Color.blurple())
+        embed.set_footer(text="React to receive a role. Remove your reaction to remove the role.")
+        msg = await target.send(embed=embed)
+        reaction_roles = cfg.get("reaction_roles", {})
+        reaction_roles[str(msg.id)] = {e: int(r) for e, r in pairs}
+        cfg.set("reaction_roles", reaction_roles)
+        for emoji, _ in pairs:
+            try:
+                await msg.add_reaction(emoji)
+            except discord.HTTPException:
+                log.warning("Could not add reaction %s to message %s", emoji, msg.id)
+        await ch.send(f"Reaction role message posted in {target.mention} with {len(pairs)} role(s).")
+        log.info("Reaction role message %s created by %s", msg.id, message.author)
+
+    elif content.startswith("!reaction-role-add"):
+        if not message.author.guild_permissions.manage_roles:
+            await ch.send("You need Manage Roles permission.")
+            return
+        parts = content.split()
+        if len(parts) < 2:
+            await ch.send("Usage: `!reaction-role-add <message_id> emoji1 @role1 [emoji2 @role2 ...]`")
+            return
+        message_id = parts[1]
+        reaction_roles = cfg.get("reaction_roles", {})
+        if message_id not in reaction_roles:
+            await ch.send("No reaction role message found with that ID.")
+            return
+        after = content[len("!reaction-role-add"):].strip()[len(message_id):].strip()
+        pairs = _RR_PAIR_RE.findall(after)
+        if not pairs:
+            await ch.send("No emoji→role pairs found.")
+            return
+        reaction_roles[message_id].update({e: int(r) for e, r in pairs})
+        cfg.set("reaction_roles", reaction_roles)
+        msg_obj = None
+        for c in message.guild.text_channels:
+            try:
+                msg_obj = await c.fetch_message(int(message_id))
+                break
+            except (discord.NotFound, discord.Forbidden):
+                continue
+        if msg_obj:
+            for emoji, _ in pairs:
+                try:
+                    await msg_obj.add_reaction(emoji)
+                except discord.HTTPException:
+                    log.warning("Could not add reaction %s to message %s", emoji, message_id)
+            full_mapping = reaction_roles[message_id]
+            lines = []
+            for emoji, role_id in full_mapping.items():
+                role = message.guild.get_role(role_id)
+                lines.append(f"{emoji}  →  {role.mention if role else '(unknown role)'}")
+            if msg_obj.embeds:
+                embed = msg_obj.embeds[0]
+                embed.description = "\n".join(lines)
+                await msg_obj.edit(embed=embed)
+        await ch.send(f"Added {len(pairs)} emoji→role pair(s) to message `{message_id}`.")
+        log.info("Reaction role message %s updated by %s", message_id, message.author)
+
+    elif content == "!reaction-role-list":
+        if not message.author.guild_permissions.manage_roles:
+            await ch.send("You need Manage Roles permission.")
+            return
+        reaction_roles = cfg.get("reaction_roles", {})
+        if not reaction_roles:
+            await ch.send("No reaction role messages configured.")
+            return
+        lines = []
+        for msg_id, mapping in reaction_roles.items():
+            pairs = []
+            for emoji, role_id in mapping.items():
+                role = message.guild.get_role(role_id)
+                pairs.append(f"{emoji} → {role.mention if role else f'(deleted role {role_id})'}")
+            lines.append(f"**Message `{msg_id}`**\n" + "\n".join(pairs))
+        await ch.send("\n\n".join(lines))
+
+    elif content.startswith("!reaction-role-remove"):
+        if not message.author.guild_permissions.manage_roles:
+            await ch.send("You need Manage Roles permission.")
+            return
+        parts = content.split()
+        if len(parts) < 2:
+            await ch.send("Usage: `!reaction-role-remove <message_id>`")
+            return
+        message_id = parts[1]
+        reaction_roles = cfg.get("reaction_roles", {})
+        if message_id not in reaction_roles:
+            await ch.send("No reaction role message found with that ID.")
+            return
+        del reaction_roles[message_id]
+        cfg.set("reaction_roles", reaction_roles)
+        deleted = False
+        for c in message.guild.text_channels:
+            try:
+                msg_obj = await c.fetch_message(int(message_id))
+                await msg_obj.delete()
+                deleted = True
+                break
+            except (discord.NotFound, discord.Forbidden):
+                continue
+        status = "Message deleted and config removed." if deleted else "Config removed (message was already deleted or not found)."
+        await ch.send(status)
+        log.info("Reaction role message %s removed by %s", message_id, message.author)
+
+
 # ── gateway events ─────────────────────────────────────────────────────────────
 
 _store_ready = False
@@ -432,6 +762,7 @@ async def on_ready():
     if not _store_ready:
         await message_store.init()
         await leveling.init()
+        await warn_mod.init()
         _store_ready = True
         asyncio.ensure_future(_restart_watcher())
     await tree.sync()
@@ -760,6 +1091,18 @@ async def on_message(message):
             await leveling.handle_message(message, client)
         except Exception:
             log.exception("Leveling error on message %s", message.id)
+        try:
+            await leveling.handle_prefix_command(message, client)
+        except Exception:
+            log.exception("Leveling prefix command error on message %s", message.id)
+        try:
+            await warn_mod.handle_prefix_command(message, client)
+        except Exception:
+            log.exception("Warnings prefix command error on message %s", message.id)
+        try:
+            await _handle_prefix_commands(message)
+        except Exception:
+            log.exception("Prefix command error on message %s", message.id)
 
     if message.guild and not message.author.bot and INVITE_RE.search(message.content):
         log.info("Invite link detected from %s in #%s", message.author, message.channel)

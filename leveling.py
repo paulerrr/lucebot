@@ -454,3 +454,252 @@ def setup(tree: discord.app_commands.CommandTree, client: discord.Client):
             f"Reset {member.mention}'s XP to 0.", ephemeral=True
         )
         log.info("XP reset for %s by %s", member, interaction.user)
+
+
+async def handle_prefix_command(message: discord.Message, client: discord.Client):
+    content = message.content.strip()
+    ch = message.channel
+
+    # ── admin-only commands ────────────────────────────────────────────────────
+
+    if content.startswith("!level-reward-add"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if len(parts) < 3 or not message.role_mentions:
+            await ch.send("Usage: `!level-reward-add <level> @role`")
+            return
+        try:
+            level = int(parts[1])
+        except ValueError:
+            await ch.send("Level must be a number.")
+            return
+        if level < 1:
+            await ch.send("Level must be at least 1.")
+            return
+        role = message.role_mentions[0]
+        await _db.execute(
+            "INSERT INTO level_rewards (guild_id, level, role_id) VALUES (?, ?, ?)"
+            " ON CONFLICT(guild_id, level) DO UPDATE SET role_id = ?",
+            (message.guild.id, level, role.id, role.id),
+        )
+        await _db.commit()
+        await ch.send(f"{role.mention} will be granted at Level {level}.")
+        log.info("Level reward set: guild=%s level=%d role=%s by %s",
+                 message.guild.id, level, role.id, message.author)
+
+    elif content.startswith("!level-reward-remove"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if len(parts) < 2:
+            await ch.send("Usage: `!level-reward-remove <level>`")
+            return
+        try:
+            level = int(parts[1])
+        except ValueError:
+            await ch.send("Level must be a number.")
+            return
+        await _db.execute(
+            "DELETE FROM level_rewards WHERE guild_id = ? AND level = ?",
+            (message.guild.id, level),
+        )
+        await _db.commit()
+        await ch.send(f"Reward for Level {level} removed.")
+
+    elif content.startswith("!level-reward-list"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        rewards = await _get_level_rewards(message.guild.id)
+        if not rewards:
+            await ch.send("No level rewards configured.")
+            return
+        lines = []
+        for r in rewards:
+            role = message.guild.get_role(r["role_id"])
+            role_str = role.mention if role else f"*(deleted role {r['role_id']})*"
+            lines.append(f"Level **{r['level']}** → {role_str}")
+        embed = discord.Embed(
+            title="Level Rewards",
+            description="\n".join(lines),
+            color=discord.Color.blurple(),
+        )
+        await ch.send(embed=embed)
+
+    elif content.startswith("!level-ignore-channel"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        if not message.channel_mentions:
+            await ch.send("Usage: `!level-ignore-channel #channel`")
+            return
+        target = message.channel_mentions[0]
+        ignored = cfg.get("leveling_ignored_channels", [])
+        if target.id not in ignored:
+            ignored.append(target.id)
+            cfg.set("leveling_ignored_channels", ignored)
+        await ch.send(f"XP will no longer be granted for messages in {target.mention}.")
+
+    elif content.startswith("!level-unignore-channel"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        if not message.channel_mentions:
+            await ch.send("Usage: `!level-unignore-channel #channel`")
+            return
+        target = message.channel_mentions[0]
+        ignored = cfg.get("leveling_ignored_channels", [])
+        if target.id in ignored:
+            ignored.remove(target.id)
+            cfg.set("leveling_ignored_channels", ignored)
+            await ch.send(f"XP will now be granted in {target.mention}.")
+        else:
+            await ch.send(f"{target.mention} is not ignored.")
+
+    elif content.startswith("!level-notify"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if len(parts) < 2:
+            await ch.send("Usage: `!level-notify <current|dm|channel|off> [#channel]`")
+            return
+        mode = parts[1].lower()
+        if mode not in ("current", "dm", "channel", "off"):
+            await ch.send("Mode must be one of: `current`, `dm`, `channel`, `off`")
+            return
+        if mode == "channel":
+            if not message.channel_mentions:
+                await ch.send("Specify a channel: `!level-notify channel #channel`")
+                return
+            target = message.channel_mentions[0]
+            cfg.set("leveling_notify_channel_id", target.id)
+            cfg.set("leveling_notify_mode", mode)
+            await ch.send(f"Level-up notifications will be sent in {target.mention}.")
+        else:
+            cfg.set("leveling_notify_mode", mode)
+            labels = {"current": "the channel where the message was posted", "dm": "DM", "off": "nowhere"}
+            await ch.send(f"Level-up notifications will go to **{labels[mode]}**.")
+
+    elif content.startswith("!level-config"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if len(parts) == 1:
+            lines = [
+                f"Enabled: **{cfg.get('leveling_enabled', True)}**",
+                f"XP per message: **{cfg.get('leveling_xp_min', 15)}–{cfg.get('leveling_xp_max', 25)}**",
+                f"Stack rewards: **{cfg.get('leveling_stack_rewards', True)}**",
+                f"Notify mode: **{cfg.get('leveling_notify_mode', 'current')}**",
+            ]
+            embed = discord.Embed(
+                title="Leveling Config",
+                description="\n".join(lines),
+                color=discord.Color.blurple(),
+            )
+            await ch.send(embed=embed)
+        elif len(parts) >= 3:
+            key, value = parts[1].lower(), parts[2].lower()
+            if key == "enabled":
+                if value not in ("true", "false"):
+                    await ch.send("Value must be `true` or `false`.")
+                    return
+                cfg.set("leveling_enabled", value == "true")
+                await ch.send(f"Leveling: **{'enabled' if value == 'true' else 'disabled'}**")
+            elif key in ("xp_min", "xp_max"):
+                try:
+                    n = int(parts[2])
+                except ValueError:
+                    await ch.send("Value must be a number.")
+                    return
+                cfg.set(f"leveling_{key}", n)
+                await ch.send(f"{key} set to **{n}**.")
+            elif key == "stack_rewards":
+                if value not in ("true", "false"):
+                    await ch.send("Value must be `true` or `false`.")
+                    return
+                cfg.set("leveling_stack_rewards", value == "true")
+                await ch.send(f"Stack rewards: **{value}**")
+            else:
+                await ch.send("Unknown key. Valid: `enabled`, `xp_min`, `xp_max`, `stack_rewards`")
+        else:
+            await ch.send("Usage: `!level-config` or `!level-config <key> <value>`")
+
+    elif content.startswith("!xp-set"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        parts = content.split()
+        if not message.mentions or len(parts) < 3:
+            await ch.send("Usage: `!xp-set @member <amount>`")
+            return
+        member = message.mentions[0]
+        try:
+            amount = int(parts[-1])
+        except ValueError:
+            await ch.send("Amount must be a number.")
+            return
+        if amount < 0:
+            await ch.send("Amount must be 0 or greater.")
+            return
+        _, new_level = await _set_xp(message.guild.id, member.id, amount)
+        await ch.send(f"Set {member.mention}'s XP to **{amount:,}** (Level {new_level}).")
+        log.info("XP set to %d for %s by %s", amount, member, message.author)
+
+    elif content.startswith("!xp-reset"):
+        if not message.author.guild_permissions.manage_guild:
+            await ch.send("You need Manage Server permission.")
+            return
+        if not message.mentions:
+            await ch.send("Usage: `!xp-reset @member`")
+            return
+        member = message.mentions[0]
+        await _reset_xp(message.guild.id, member.id)
+        await ch.send(f"Reset {member.mention}'s XP to 0.")
+        log.info("XP reset for %s by %s", member, message.author)
+
+    # ── public commands ────────────────────────────────────────────────────────
+
+    elif content.startswith("!leaderboard"):
+        rows = await _get_leaderboard(message.guild.id, limit=10)
+        if not rows:
+            await ch.send("No one has earned any XP yet.")
+            return
+        lines = []
+        for i, row in enumerate(rows, start=1):
+            member = message.guild.get_member(row["user_id"])
+            name = member.mention if member else f"<@{row['user_id']}>"
+            lvl, _, _ = level_from_xp(row["xp"])
+            lines.append(f"**#{i}** {name} — Level {lvl} · {row['xp']:,} XP")
+        embed = discord.Embed(
+            title=f"XP Leaderboard — {message.guild.name}",
+            description="\n".join(lines),
+            color=discord.Color.gold(),
+        )
+        await ch.send(embed=embed)
+
+    elif content.startswith("!rank"):
+        target = message.mentions[0] if message.mentions else message.author
+        member = message.guild.get_member(target.id)
+        if member is None:
+            await ch.send("Member not found.")
+            return
+        total_xp = await _get_xp(message.guild.id, member.id)
+        level, current_xp, needed_xp = level_from_xp(total_xp)
+        rank = await _get_rank(message.guild.id, member.id)
+        bar = _xp_bar(current_xp, needed_xp)
+        embed = discord.Embed(color=discord.Color.blurple())
+        embed.set_author(name=str(member), icon_url=member.display_avatar.url)
+        embed.add_field(name="Rank", value=f"#{rank}", inline=True)
+        embed.add_field(name="Level", value=str(level), inline=True)
+        embed.add_field(name="Total XP", value=f"{total_xp:,}", inline=True)
+        embed.add_field(
+            name=f"Progress  →  Level {level + 1}",
+            value=f"`{bar}` {current_xp:,} / {needed_xp:,} XP",
+            inline=False,
+        )
+        await ch.send(embed=embed)

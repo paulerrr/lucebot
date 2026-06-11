@@ -95,53 +95,85 @@ class SocialInteractions:
         self._cooldowns[user_id] = time.monotonic()
         return 0
 
-    # ── command handlers ───────────────────────────────────────────────────────
+    # ── shared core ───────────────────────────────────────────────────────────
+
+    async def _core_compliment(self, author_id, guild_id, target, bot_user, send_fn):
+        if author_id in self.blocked_users:
+            await send_fn("You don't have permission to use this command.")
+            return
+        remaining = self._on_cooldown(author_id)
+        if remaining:
+            await send_fn(f"You're doing that too fast! Try again in {remaining:.1f}s.")
+            return
+        if target.bot and target.id != bot_user.id:
+            await send_fn("I can't compliment other bots, but I'm sure they're doing their best! 🤖")
+            return
+        if target.id == bot_user.id:
+            await send_fn("That's sweet of you, but I'd rather compliment you instead! 💖")
+            return
+        text = self.compliment_tracker.get_message(guild_id)
+        await send_fn(f"{target.mention} {text}")
+        log.info("Compliment sent by %s to %s", author_id, target)
+
+    async def _core_insult(self, author_id, guild_id, target, bot_user, send_fn):
+        if author_id in self.blocked_users:
+            await send_fn("You don't have permission to use this command.")
+            return
+        remaining = self._on_cooldown(author_id)
+        if remaining:
+            await send_fn(f"You're doing that too fast! Try again in {remaining:.1f}s.")
+            return
+        if target.bot and target.id != bot_user.id:
+            await send_fn("I don't insult my fellow bots! We have to stick together! 🤖")
+            return
+        if target.id == bot_user.id:
+            await send_fn("Nice try, but I'm not falling for that! Try insulting someone else! 😏")
+            return
+        text = self.insult_tracker.get_message(guild_id)
+        await send_fn(f"{target.mention} {text}")
+        log.info("Insult sent by %s to %s", author_id, target)
+
+    def _blocked_users_embed(self, client: discord.Client) -> discord.Embed:
+        lines = []
+        for uid in self.blocked_users:
+            user = client.get_user(uid)
+            lines.append(f"• {user.mention} (ID: {uid})" if user else f"• Unknown User (ID: {uid})")
+        embed = discord.Embed(
+            title="Blocked Users",
+            description="Users blocked from using social interaction commands:",
+            color=discord.Color.red(),
+        )
+        embed.add_field(
+            name=f"Blocked Users ({len(self.blocked_users)})",
+            value="\n".join(lines),
+            inline=False,
+        )
+        return embed
+
+    def _do_reload(self) -> str:
+        old_c, old_i = len(self.compliments), len(self.insults)
+        self._load_messages()
+        self.compliment_tracker = MessageTracker(self.compliments)
+        self.insult_tracker = MessageTracker(self.insults)
+        return (
+            f"✅ Messages reloaded!\n"
+            f"- Compliments: {old_c} → {len(self.compliments)}\n"
+            f"- Insults: {old_i} → {len(self.insults)}"
+        )
+
+    # ── prefix handlers ───────────────────────────────────────────────────────
 
     async def handle_compliment(self, message: discord.Message, bot_user: discord.ClientUser) -> None:
-        if message.author.id in self.blocked_users:
-            await message.channel.send("You don't have permission to use this command.")
-            return
-
-        remaining = self._on_cooldown(message.author.id)
-        if remaining:
-            await message.channel.send(f"You're doing that too fast! Try again in {remaining:.1f}s.")
-            return
-
-        user = message.mentions[0] if message.mentions else message.author
-
-        if user.bot and user.id != bot_user.id:
-            await message.channel.send("I can't compliment other bots, but I'm sure they're doing their best! 🤖")
-            return
-        if user.id == bot_user.id:
-            await message.channel.send("That's sweet of you, but I'd rather compliment you instead! 💖")
-            return
-
-        text = self.compliment_tracker.get_message(message.guild.id)
-        await message.channel.send(f"{user.mention} {text}")
-        log.info("Compliment sent by %s to %s", message.author, user)
+        target = message.mentions[0] if message.mentions else message.author
+        await self._core_compliment(
+            message.author.id, message.guild.id, target, bot_user, message.channel.send
+        )
 
     async def handle_insult(self, message: discord.Message, bot_user: discord.ClientUser) -> None:
-        if message.author.id in self.blocked_users:
-            await message.channel.send("You don't have permission to use this command.")
-            return
-
-        remaining = self._on_cooldown(message.author.id)
-        if remaining:
-            await message.channel.send(f"You're doing that too fast! Try again in {remaining:.1f}s.")
-            return
-
-        user = message.mentions[0] if message.mentions else message.author
-
-        if user.bot and user.id != bot_user.id:
-            await message.channel.send("I don't insult my fellow bots! We have to stick together! 🤖")
-            return
-        if user.id == bot_user.id:
-            await message.channel.send("Nice try, but I'm not falling for that! Try insulting someone else! 😏")
-            return
-
-        text = self.insult_tracker.get_message(message.guild.id)
-        await message.channel.send(f"{user.mention} {text}")
-        log.info("Insult sent by %s to %s", message.author, user)
+        target = message.mentions[0] if message.mentions else message.author
+        await self._core_insult(
+            message.author.id, message.guild.id, target, bot_user, message.channel.send
+        )
 
     async def handle_blockuser(self, message: discord.Message) -> None:
         if not message.author.guild_permissions.administrator:
@@ -182,33 +214,67 @@ class SocialInteractions:
         if not self.blocked_users:
             await message.channel.send("No users are currently blocked from using social interaction commands.")
             return
-        lines = []
-        for uid in self.blocked_users:
-            user = bot.get_user(uid)
-            lines.append(f"• {user.mention} (ID: {uid})" if user else f"• Unknown User (ID: {uid})")
-        embed = discord.Embed(
-            title="Blocked Users",
-            description="Users blocked from using social interaction commands:",
-            color=discord.Color.red(),
-        )
-        embed.add_field(
-            name=f"Blocked Users ({len(self.blocked_users)})",
-            value="\n".join(lines),
-            inline=False,
-        )
-        await message.channel.send(embed=embed)
+        await message.channel.send(embed=self._blocked_users_embed(bot))
 
     async def handle_reload(self, message: discord.Message) -> None:
         if not message.author.guild_permissions.administrator:
             await message.channel.send("You need administrator permission to use this command.")
             return
-        old_c, old_i = len(self.compliments), len(self.insults)
-        self._load_messages()
-        self.compliment_tracker = MessageTracker(self.compliments)
-        self.insult_tracker = MessageTracker(self.insults)
-        await message.channel.send(
-            f"✅ Messages reloaded!\n"
-            f"- Compliments: {old_c} → {len(self.compliments)}\n"
-            f"- Insults: {old_i} → {len(self.insults)}"
-        )
+        await message.channel.send(self._do_reload())
         log.info("Messages reloaded by %s", message.author)
+
+    # ── slash handlers ────────────────────────────────────────────────────────
+
+    async def handle_compliment_slash(self, interaction: discord.Interaction, member, bot_user) -> None:
+        target = member or interaction.user
+        await self._core_compliment(
+            interaction.user.id, interaction.guild.id, target, bot_user,
+            interaction.response.send_message,
+        )
+
+    async def handle_insult_slash(self, interaction: discord.Interaction, member, bot_user) -> None:
+        target = member or interaction.user
+        await self._core_insult(
+            interaction.user.id, interaction.guild.id, target, bot_user,
+            interaction.response.send_message,
+        )
+
+    async def handle_blockuser_slash(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if member.id in self.blocked_users:
+            await interaction.response.send_message(
+                f"{member.mention} is already blocked from social interaction commands.", ephemeral=True
+            )
+            return
+        self.blocked_users.add(member.id)
+        self._save_blocked_users()
+        await interaction.response.send_message(
+            f"✅ {member.mention} is now blocked from social interaction commands.", ephemeral=True
+        )
+        log.info("Blocked %s from social interactions (by %s)", member, interaction.user)
+
+    async def handle_unblockuser_slash(self, interaction: discord.Interaction, member: discord.Member) -> None:
+        if member.id not in self.blocked_users:
+            await interaction.response.send_message(
+                f"{member.mention} is not blocked from social interaction commands.", ephemeral=True
+            )
+            return
+        self.blocked_users.discard(member.id)
+        self._save_blocked_users()
+        await interaction.response.send_message(
+            f"✅ {member.mention} is now unblocked from social interaction commands.", ephemeral=True
+        )
+        log.info("Unblocked %s from social interactions (by %s)", member, interaction.user)
+
+    async def handle_listblockedusers_slash(
+        self, interaction: discord.Interaction, client: discord.Client
+    ) -> None:
+        if not self.blocked_users:
+            await interaction.response.send_message(
+                "No users are currently blocked from social interaction commands.", ephemeral=True
+            )
+            return
+        await interaction.response.send_message(embed=self._blocked_users_embed(client), ephemeral=True)
+
+    async def handle_reload_slash(self, interaction: discord.Interaction) -> None:
+        await interaction.response.send_message(self._do_reload(), ephemeral=True)
+        log.info("Messages reloaded by %s", interaction.user)
