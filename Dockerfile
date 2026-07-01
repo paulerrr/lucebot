@@ -8,7 +8,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py config.py saint_quotes.py social_interactions.py saint_quotes.db ./
+COPY bot.py readings.py latin_readings.py quotes.py saints.py bible.py config.py saint_quotes.py social_interactions.py spam_filter.py saint_quotes.db ./
 COPY bibles/ ./bibles/
 COPY data/ ./data/
 
