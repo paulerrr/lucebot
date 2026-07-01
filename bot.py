@@ -16,6 +16,7 @@ from bible import (
 )
 import config as cfg
 from social_interactions import SocialInteractions
+import spam_filter
 
 load_dotenv()
 cfg.load()
@@ -513,6 +514,54 @@ async def reaction_role_remove_command(interaction: discord.Interaction, message
     log.info("Reaction role message %s removed by %s", message_id, interaction.user)
 
 
+@tree.command(name="spam-filter-add", description="Add a keyword to the spam name auto-ban filter")
+@discord.app_commands.describe(keyword="Keyword to flag (case-insensitive, substring match)")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_filter_add_command(interaction: discord.Interaction, keyword: str):
+    added = spam_filter.add_keyword(keyword)
+    if added:
+        await interaction.response.send_message(f"Added `{keyword.lower()}` to the spam filter keyword list.", ephemeral=True)
+        log.info("Spam filter keyword '%s' added by %s", keyword, interaction.user)
+    else:
+        await interaction.response.send_message(f"`{keyword.lower()}` is already in the keyword list.", ephemeral=True)
+
+
+@tree.command(name="spam-filter-remove", description="Remove a keyword from the spam name auto-ban filter")
+@discord.app_commands.describe(keyword="Keyword to remove")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_filter_remove_command(interaction: discord.Interaction, keyword: str):
+    removed = spam_filter.remove_keyword(keyword)
+    if removed:
+        await interaction.response.send_message(f"Removed `{keyword.lower()}` from the spam filter keyword list.", ephemeral=True)
+        log.info("Spam filter keyword '%s' removed by %s", keyword, interaction.user)
+    else:
+        await interaction.response.send_message(f"`{keyword.lower()}` was not in the keyword list.", ephemeral=True)
+
+
+@tree.command(name="spam-filter-list", description="List the spam name auto-ban filter keywords")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_filter_list_command(interaction: discord.Interaction):
+    keywords = spam_filter.list_keywords()
+    lines = "\n".join(f"- `{k}`" for k in keywords) if keywords else "(none)"
+    await interaction.response.send_message(
+        f"**Spam filter keywords** ({len(keywords)}):\n{lines}\n\n"
+        f"New members are also auto-banned if their name has an obfuscated dot pattern "
+        f"(e.g. `.TEENS .MEGA ..LINKS S.ELLER`).",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="spam-filter-test", description="Test a name against the spam auto-ban filter without banning anyone")
+@discord.app_commands.describe(name="The name to test")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_filter_test_command(interaction: discord.Interaction, name: str):
+    reason = spam_filter.check_name(name)
+    if reason:
+        await interaction.response.send_message(f"Would be **banned** — {reason}", ephemeral=True)
+    else:
+        await interaction.response.send_message("Would **not** be banned.", ephemeral=True)
+
+
 @tasks.loop(hours=1)
 async def kick_unverified_members():
     """Kick purgatory members who haven't posted in 3 days."""
@@ -587,6 +636,9 @@ async def on_ready():
 
 @client.event
 async def on_member_join(member):
+    if await spam_filter.check_and_ban(member, _get_log_channel()):
+        return
+
     purgatory_channel_id = PURGATORY_CHANNEL_ID or cfg.get("purgatory_channel_id")
     purgatory_role_id = PURGATORY_ROLE_ID or cfg.get("purgatory_role_id")
     if purgatory_channel_id and purgatory_role_id:
