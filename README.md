@@ -79,13 +79,14 @@ The slash command saves to `config.json` and takes effect immediately. The env v
 
 ## Purgatory Verification
 
-When a new member joins, the bot automatically assigns them the **Purgatory** role, which restricts them to a single `#purgatory` channel. The bot pings them there with three verification questions:
+When a new member joins, the bot automatically assigns them the **Purgatory** role, which restricts them to a single `#purgatory` channel. The bot pings them there with six verification questions:
 
 1. Are you Catholic or enquiring? If not, what denomination or religion?
 2. Are you 18 years old or older?
 3. Do you disagree with any traditional Church teachings?
 4. Are you sedevacantist?
-5. Do you want a rosary or prayer ping?
+5. What is your opinion on the SSPX?
+6. Do you want a rosary or prayer ping?
 
 Once answered, they ping a mod for manual review and role removal using `!verify @member` or `/verify @member`.
 

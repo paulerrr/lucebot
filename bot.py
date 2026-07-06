@@ -663,7 +663,8 @@ async def on_member_join(member):
                         f"2. Are you 18 years old or older?\n"
                         f"3. Do you disagree with any traditional Church teachings?\n"
                         f"4. Are you sedevacantist?\n"
-                        f"5. Do you want a rosary or prayer ping?\n\n"
+                        f"5. What is your opinion on the SSPX?\n"
+                        f"6. Do you want a rosary or prayer ping?\n\n"
                         f"Once you've answered, please ping a mod so they can verify you and grant you access."
                     )
                     log.info("Assigned purgatory role and posted verification prompt for %s", member)
