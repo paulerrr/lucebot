@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import zoneinfo
 
 import discord
 from discord.ext import tasks
@@ -48,7 +49,7 @@ log = logging.getLogger("lucebot")
 
 social = SocialInteractions()
 
-EST = datetime.timezone(datetime.timedelta(hours=-5))
+EASTERN = zoneinfo.ZoneInfo("America/New_York")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -104,9 +105,9 @@ async def post_saint(channel, *, manual=False):
     await channel.send(embeds=result)
 
 
-@tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EST))
+@tasks.loop(time=datetime.time(hour=7, minute=0, tzinfo=EASTERN))
 async def daily_readings():
-    """Post readings and quote every day at 7:00 AM EST."""
+    """Post readings and quote every day at 7:00 AM US Eastern."""
     channel = client.get_channel(CHANNEL_ID)
     if channel is None:
         log.error("Channel %s not found", CHANNEL_ID)

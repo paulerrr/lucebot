@@ -2,6 +2,7 @@ import datetime
 import html
 import logging
 import re
+import zoneinfo
 
 import aiohttp
 import discord
@@ -18,7 +19,7 @@ HEADERS = {
     )
 }
 
-EST = datetime.timezone(datetime.timedelta(hours=-5))
+EASTERN = zoneinfo.ZoneInfo("America/New_York")
 
 MAX_EMBEDS = 10  # Discord limit per message
 MAX_DESCRIPTION = 4096  # Discord limit per embed
@@ -128,7 +129,7 @@ async def get_daily_saint() -> list[discord.Embed] | None | str:
     (plus any other saints celebrated today), the string ``"no_feast"``
     when no saint is listed, or ``None`` on fetch errors.
     """
-    today = datetime.datetime.now(EST)
+    today = datetime.datetime.now(EASTERN)
     day_url = DAY_URL.format(month=today.month, day=today.day)
 
     async with aiohttp.ClientSession() as session:
