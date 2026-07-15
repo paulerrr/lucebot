@@ -22,6 +22,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - `!compliment [@member]` — sends a random compliment to the mentioned member (or yourself if omitted)
 - `!insult [@member]` — sends a random playful insult to the mentioned member (or yourself if omitted)
 - Spam name auto-ban — new members with spammy usernames (keyword matches or dot-obfuscated names like `.TEENS .MEGA ..LINKS S.ELLER`) are automatically banned and logged
+- Spam message auto-ban — members who post a message matching a banned phrase (e.g. `mega seller`, including obfuscated forms like `M.EGA S.ELLER`) are automatically banned and logged; patterns with `+` (e.g. `cp + seller`) require all terms to appear anywhere in the message; manage patterns with `/spam-message-add`, `/spam-message-remove`, `/spam-message-list`, and `/spam-message-test`
 
 ## Setup
 

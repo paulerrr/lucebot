@@ -563,6 +563,56 @@ async def spam_filter_test_command(interaction: discord.Interaction, name: str):
         await interaction.response.send_message("Would **not** be banned.", ephemeral=True)
 
 
+@tree.command(name="spam-message-add", description="Add a phrase to the spam message auto-ban filter")
+@discord.app_commands.describe(pattern="Phrase to flag, or terms joined with + that must all appear (e.g. 'cp + seller')")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_message_add_command(interaction: discord.Interaction, pattern: str):
+    added = spam_filter.add_message_pattern(pattern)
+    if added:
+        await interaction.response.send_message(f"Added `{pattern.lower()}` to the spam message pattern list.", ephemeral=True)
+        log.info("Spam message pattern '%s' added by %s", pattern, interaction.user)
+    else:
+        await interaction.response.send_message(f"`{pattern.lower()}` is already in the pattern list.", ephemeral=True)
+
+
+@tree.command(name="spam-message-remove", description="Remove a phrase from the spam message auto-ban filter")
+@discord.app_commands.describe(pattern="Phrase to remove")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_message_remove_command(interaction: discord.Interaction, pattern: str):
+    removed = spam_filter.remove_message_pattern(pattern)
+    if removed:
+        await interaction.response.send_message(f"Removed `{pattern.lower()}` from the spam message pattern list.", ephemeral=True)
+        log.info("Spam message pattern '%s' removed by %s", pattern, interaction.user)
+    else:
+        await interaction.response.send_message(f"`{pattern.lower()}` was not in the pattern list.", ephemeral=True)
+
+
+@tree.command(name="spam-message-list", description="List the spam message auto-ban filter patterns")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_message_list_command(interaction: discord.Interaction):
+    patterns = spam_filter.list_message_patterns()
+    lines = "\n".join(f"- `{p}`" for p in patterns) if patterns else "(none)"
+    await interaction.response.send_message(
+        f"**Spam message patterns** ({len(patterns)}):\n{lines}\n\n"
+        f"Members are auto-banned if a message contains one of these phrases, "
+        f"including obfuscated forms like `M.EGA S.ELLER`. Patterns with `+` "
+        f"(e.g. `cp + seller`) match when **all** terms appear anywhere in the message. "
+        f"Bots and members with Manage Messages are exempt.",
+        ephemeral=True,
+    )
+
+
+@tree.command(name="spam-message-test", description="Test a message against the spam auto-ban filter without banning anyone")
+@discord.app_commands.describe(content="The message text to test")
+@discord.app_commands.default_permissions(ban_members=True)
+async def spam_message_test_command(interaction: discord.Interaction, content: str):
+    reason = spam_filter.check_message(content)
+    if reason:
+        await interaction.response.send_message(f"Would be **banned** — {reason}", ephemeral=True)
+    else:
+        await interaction.response.send_message("Would **not** be banned.", ephemeral=True)
+
+
 @tasks.loop(hours=1)
 async def kick_unverified_members():
     """Kick purgatory members who haven't posted in 3 days."""
@@ -709,6 +759,9 @@ async def on_member_remove(member):
 @client.event
 async def on_message(message):
     if message.author == client.user:
+        return
+
+    if await spam_filter.check_message_and_ban(message, _get_log_channel()):
         return
 
     if message.content.strip() == "!readings":
