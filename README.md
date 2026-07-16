@@ -21,8 +21,7 @@ Lucebot is a Discord bot for Roman Catholic servers that posts daily Mass readin
 - `!verify @member` command (and `/verify` slash command) to remove the Purgatory role and grant server access
 - `!compliment [@member]` — sends a random compliment to the mentioned member (or yourself if omitted)
 - `!insult [@member]` — sends a random playful insult to the mentioned member (or yourself if omitted)
-- Spam name auto-ban — new members with spammy usernames (keyword matches or dot-obfuscated names like `.TEENS .MEGA ..LINKS S.ELLER`) are automatically banned and logged
-- Spam message auto-ban — members who post a message matching a banned phrase (e.g. `mega seller`, including obfuscated forms like `M.EGA S.ELLER`) are automatically banned and logged; patterns with `+` (e.g. `cp + seller`) require all terms to appear anywhere in the message; manage patterns with `/spam-message-add`, `/spam-message-remove`, `/spam-message-list`, and `/spam-message-test`
+- Spam filter with auto-ban — spammy usernames and messages are automatically detected, banned, and logged
 
 ## Setup
 
@@ -121,25 +120,9 @@ DISCORD_PURGATORY_ROLE_ID=your-role-id-here
 >   - ./config.json:/app/config.json
 > ```
 
-## Spam Name Auto-Ban
+## Spam Filter & Auto-Ban
 
-When a new member joins, their username and display name are checked against a spam filter. A match causes an immediate ban and a log entry (if a log channel is configured) — the member never gets a chance to post.
-
-A name is flagged if either:
-
-- It contains a keyword from the blocklist (case-insensitive substring match), or
-- It has an obfuscated dot pattern typical of spam bots (e.g. `.TEENS .MEGA ..LINKS S.ELLER`) — 3+ periods with a high period-to-length ratio across 3+ tokens.
-
-**Admin commands** (requires Ban Members permission):
-
-| Command | Description |
-|---|---|
-| `/spam-filter-add keyword:` | Add a keyword to the blocklist |
-| `/spam-filter-remove keyword:` | Remove a keyword from the blocklist |
-| `/spam-filter-list` | Show all configured keywords |
-| `/spam-filter-test name:` | Check whether a given name would be auto-banned, without banning anyone |
-
-The keyword list starts with a built-in default set and is persisted to `config.json`, so additions/removals survive restarts.
+The bot includes a spam filter that automatically bans members with spammy usernames or messages and logs the ban to the configured log channel. Filter rules are managed at runtime via the `/spam-filter-*` and `/spam-message-*` slash commands (requires Ban Members permission) and persist to `config.json` across restarts.
 
 ## Social Interactions
 
@@ -163,4 +146,4 @@ The bot requires the following enabled in the [Discord Developer Portal](https:/
 - **Message Content** privileged intent
 - **Server Members** privileged intent (required for purgatory / `on_member_join`)
 
-The bot also needs **Manage Roles** permission in the server, and its role must be positioned **above** the Purgatory role in the role list. **Ban Members** permission is required for the spam name auto-ban filter.
+The bot also needs **Manage Roles** permission in the server, and its role must be positioned **above** the Purgatory role in the role list. **Ban Members** permission is required for the spam auto-ban filter.
