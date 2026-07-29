@@ -3,6 +3,10 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    environment:
+      LUCEBOT_CONFIG_PATH: /app/config/config.json
     volumes:
-      - ./config.json:/app/config.json
+      - type: bind
+        source: ./config
+        target: /app/config
       - ./data:/app/data

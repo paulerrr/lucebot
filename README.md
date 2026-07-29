@@ -114,10 +114,12 @@ DISCORD_PURGATORY_CHANNEL_ID=your-channel-id-here
 DISCORD_PURGATORY_ROLE_ID=your-role-id-here
 ```
 
-> **Docker note:** mount `config.json` as a volume to preserve purgatory config across container rebuilds:
+> **Docker note:** Docker Compose stores runtime configuration in
+> `config/config.json`. The bot creates this file automatically on first run,
+> and the mounted directory preserves it across container rebuilds:
 > ```yaml
 > volumes:
->   - ./config.json:/app/config.json
+>   - ./config:/app/config
 > ```
 
 ## Spam Filter & Auto-Ban

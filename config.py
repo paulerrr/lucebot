@@ -1,15 +1,23 @@
 import json
 import os
 
-_PATH = os.path.join(os.path.dirname(__file__), "config.json")
+_PATH = os.getenv(
+    "LUCEBOT_CONFIG_PATH",
+    os.path.join(os.path.dirname(__file__), "config.json"),
+)
 _data = {}
 
 
 def load():
     global _data
-    if os.path.exists(_PATH):
-        with open(_PATH) as f:
-            _data = json.load(f)
+    os.makedirs(os.path.dirname(_PATH), exist_ok=True)
+    if not os.path.exists(_PATH):
+        with open(_PATH, "w") as f:
+            json.dump({}, f)
+        _data = {}
+        return
+    with open(_PATH) as f:
+        _data = json.load(f)
 
 
 def get(key, default=None):
