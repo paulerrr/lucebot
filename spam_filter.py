@@ -23,6 +23,10 @@ DEFAULT_MESSAGE_PATTERNS = [
 DOT_RATIO_THRESHOLD = 0.15
 MIN_DOTS = 3
 MIN_TOKENS = 3
+# Short dotted names are commonly initials (for example, "m.a.s."). Only
+# apply the generic dot-obfuscation heuristic when the name contains enough
+# letters or digits to resemble the longer promotional names it targets.
+MIN_DOT_PATTERN_CHARS = 10
 
 
 def _get_keywords():
@@ -137,6 +141,9 @@ def _dot_pattern_reason(name: str):
     """Flag names like '.TEENS .MEGA ..LINKS S.ELLER' — dot-obfuscated spam."""
     dots = name.count(".")
     if dots < MIN_DOTS or not name:
+        return None
+    normalized = _SQUASH_RE.sub("", name.lower())
+    if len(normalized) < MIN_DOT_PATTERN_CHARS:
         return None
     tokens = [t for t in re.split(r"[.\s]+", name) if t]
     ratio = dots / len(name)
